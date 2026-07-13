@@ -1,0 +1,167 @@
+"""Estratégias de geração de jogos.
+
+Aviso honesto (que o app também exibe): nenhuma estratégia muda a
+probabilidade de acerto — todas as combinações de k dezenas são igualmente
+prováveis. As estratégias existem como exploração/entretenimento; a opção
+anti-rateio não aumenta a chance de ganhar, apenas evita combinações
+POPULARES (se um prêmio vier, divide-se com menos gente).
+"""
+
+import random
+from collections import Counter
+from math import comb
+
+from .stats import current_delays
+
+NUMBERS = list(range(1, 61))
+
+ESTRATEGIAS = {
+    "aleatorio": "Aleatório puro — sem viés nenhum (baseline)",
+    "frequencia": "Ponderado por frequência — números historicamente mais sorteados pesam mais",
+    "atrasados": "Atrasados — prioriza números que não saem há mais tempo",
+    "balanceado": "Balanceado — metade quentes/metade frios, pares/ímpares equilibrados e soma perto da média",
+}
+
+
+def _weighted_sample(rng: random.Random, weights: dict[int, float], k: int) -> list[int]:
+    pool = dict(weights)
+    picked: list[int] = []
+    for _ in range(k):
+        ns = list(pool)
+        chosen = rng.choices(ns, weights=[pool[n] for n in ns], k=1)[0]
+        picked.append(chosen)
+        del pool[chosen]
+    return sorted(picked)
+
+
+def _freq_counts(draws: list[dict]) -> Counter:
+    counts: Counter = Counter()
+    for d in draws:
+        counts.update(d["dezenas"])
+    return counts
+
+
+def aleatorio(rng: random.Random, _draws: list[dict], k: int) -> list[int]:
+    return sorted(rng.sample(NUMBERS, k))
+
+
+def frequencia(rng: random.Random, draws: list[dict], k: int) -> list[int]:
+    counts = _freq_counts(draws)
+    return _weighted_sample(rng, {n: counts.get(n, 0) + 1 for n in NUMBERS}, k)
+
+
+def atrasados(rng: random.Random, draws: list[dict], k: int) -> list[int]:
+    delays = {d["n"]: d["delay"] for d in current_delays(draws)["delays"]}
+    return _weighted_sample(rng, {n: delays[n] + 1 for n in NUMBERS}, k)
+
+
+def balanceado(rng: random.Random, draws: list[dict], k: int, max_tries: int = 400) -> list[int]:
+    counts = _freq_counts(draws)
+    ordered = sorted(NUMBERS, key=lambda n: (-counts.get(n, 0), n))
+    hot, cold = ordered[:30], ordered[30:]
+
+    sum_center = 30.5 * k
+    sum_tol = 7 * k  # p/ 6 dezenas: 183 ± 42
+    min_evens = max(0, k // 2 - 1)
+    max_evens = min(k, (k + 1) // 2 + 1)
+
+    best: list[int] | None = None
+    best_gap = float("inf")
+    for _ in range(max_tries):
+        n_hot = k // 2 + rng.choice([0, k % 2])
+        candidate = sorted(rng.sample(hot, n_hot) + rng.sample(cold, k - n_hot))
+        soma = sum(candidate)
+        evens = sum(1 for n in candidate if n % 2 == 0)
+        gap = abs(soma - sum_center)
+        if gap < best_gap:
+            best, best_gap = candidate, gap
+        if min_evens <= evens <= max_evens and gap <= sum_tol:
+            return candidate
+    return best or sorted(rng.sample(NUMBERS, k))
+
+
+GERADORES = {
+    "aleatorio": aleatorio,
+    "frequencia": frequencia,
+    "atrasados": atrasados,
+    "balanceado": balanceado,
+}
+
+
+def padrao_popular(dezenas: list[int], senas_passadas: set[tuple] | None = None) -> list[str]:
+    """Detecta padrões que MUITA gente joga (risco de rateio dividido)."""
+    motivos: list[str] = []
+    ds = sorted(dezenas)
+    if all(n <= 31 for n in ds):
+        motivos.append("todas as dezenas até 31 (datas de aniversário)")
+    diffs = {b - a for a, b in zip(ds, ds[1:])}
+    if len(diffs) == 1:
+        motivos.append("sequência aritmética (desenho no volante)")
+    else:
+        run = maior_sequencia_consecutiva(ds)
+        if run >= 4:
+            motivos.append(f"{run} números consecutivos")
+    if len({n % 10 for n in ds}) == 1:
+        motivos.append("todos na mesma coluna do volante")
+    if senas_passadas and len(ds) == 6 and tuple(ds) in senas_passadas:
+        motivos.append("combinação que já foi sena (muita gente repete jogos premiados)")
+    return motivos
+
+
+def maior_sequencia_consecutiva(ds: list[int]) -> int:
+    best = run = 1
+    for a, b in zip(ds, ds[1:]):
+        run = run + 1 if b == a + 1 else 1
+        best = max(best, run)
+    return best
+
+
+def gerar(
+    draws: list[dict],
+    estrategia: str,
+    jogos: int,
+    dezenas: int,
+    anti_rateio: bool = False,
+    rng: random.Random | None = None,
+) -> list[dict]:
+    rng = rng or random.Random()
+    gerador = GERADORES[estrategia]
+    senas = {tuple(sorted(d["dezenas"])) for d in draws}
+    resultado = []
+    vistos: set[tuple] = set()
+    for _ in range(jogos):
+        jogo, motivos = None, []
+        for _tent in range(60):
+            jogo = gerador(rng, draws, dezenas)
+            motivos = padrao_popular(jogo, senas)
+            repetido = tuple(jogo) in vistos
+            if not repetido and (not anti_rateio or not motivos):
+                break
+        vistos.add(tuple(jogo))
+        resultado.append(
+            {
+                "dezenas": jogo,
+                "soma": sum(jogo),
+                "pares": sum(1 for n in jogo if n % 2 == 0),
+                "padroes_populares": motivos,
+            }
+        )
+    return resultado
+
+
+def odds(k: int, preco_simples: float = 6.0) -> dict:
+    """Probabilidades exatas (hipergeométrica) para um jogo de k dezenas."""
+    total = comb(60, k)
+    faixas = {}
+    for nome, m in (("sena", 6), ("quina", 5), ("quadra", 4)):
+        favoraveis = comb(6, m) * comb(54, k - m)
+        p = favoraveis / total
+        faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
+    combos = comb(k, 6)
+    return {
+        "dezenas": k,
+        "combos_simples": combos,
+        "custo_estimado": round(combos * preco_simples, 2),
+        "preco_simples": preco_simples,
+        "faixas": faixas,
+    }

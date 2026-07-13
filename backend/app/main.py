@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
 from .routers.draws import router as draws_router
+from .routers.games import router as games_router
 from .routers.stats import router as stats_router
 
 
@@ -28,6 +29,7 @@ app.add_middleware(
 
 api = APIRouter()
 api.include_router(draws_router)
+api.include_router(games_router)
 api.include_router(stats_router)
 
 

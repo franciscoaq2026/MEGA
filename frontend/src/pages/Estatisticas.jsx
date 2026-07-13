@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 import { apiGet } from '../lib/api.js'
 import Ball, { BallRow } from '../components/Ball.jsx'
+import Card from '../components/Card.jsx'
 import { formatDate } from '../lib/format.js'
 
 const EMERALD = '#059669'
@@ -36,16 +37,6 @@ function Tip({ active, payload, label, render }) {
     <div className="bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs shadow-sm">
       {render(label, payload)}
     </div>
-  )
-}
-
-function Card({ title, subtitle, children }) {
-  return (
-    <section className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5">
-      <h3 className="font-semibold">{title}</h3>
-      {subtitle && <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p>}
-      <div className="mt-3">{children}</div>
-    </section>
   )
 }
 

@@ -85,16 +85,46 @@ hospedagem serverless, onde o disco é efêmero).
   pelo app para o mesmo concurso; conferência automática (acertos + faixa)
   quando o resultado é sincronizado; painel comparativo você × app.
 
-## Deploy (Vercel)
+## Deploy (Vercel + Turso)
 
-O `vercel.json` na raiz declara os dois serviços: frontend (Vite) em `/` e
-backend (FastAPI) em `/api`. Pontos importantes do modelo serverless:
+O app roda num **único projeto Vercel**: o frontend é servido como estático e
+o FastAPI roda como **uma função Python** em `/api` (arquivo `api/index.py`).
+Como o disco das funções serverless é efêmero, o banco em produção é o
+**Turso** (SQLite remoto/libSQL) — o `db.py` usa Turso quando a variável
+`TURSO_DATABASE_URL` está definida, e cai para SQLite local caso contrário.
 
-- O disco é efêmero: o SQLite vai para `/tmp` e é repovoado a partir do
-  `seed_megasena.csv` (se presente) a cada cold start; a sincronização busca
-  só os concursos que faltam.
-- Os jogos salvos ficam no `localStorage` **do navegador do usuário** — não
-  se perdem em deploys. Use Exportar/Importar backup para trocar de aparelho.
+Os jogos salvos ficam no `localStorage` **do navegador** — não dependem do
+servidor nem se perdem em deploys.
+
+### Passo a passo
+
+1. **Crie o banco no Turso** e pegue as credenciais:
+   ```bash
+   turso db create megasena
+   turso db show megasena --url          # -> TURSO_DATABASE_URL
+   turso db tokens create megasena       # -> TURSO_AUTH_TOKEN
+   ```
+2. **Popule o histórico uma vez, da sua máquina** (evita os limites de tempo
+   das funções do Vercel):
+   ```bash
+   cd backend
+   export TURSO_DATABASE_URL="libsql://...turso.io"
+   export TURSO_AUTH_TOKEN="..."
+   .venv/bin/pip install libsql
+   .venv/bin/python seed_turso.py        # ou: python seed_turso.py arquivo.csv
+   ```
+3. **Importe o repositório no Vercel** como projeto único:
+   - *Framework Preset*: **Other** (o `vercel.json` já define build e saída).
+     Não use o preset “Services”.
+   - *Root Directory*: a raiz do repositório.
+   - Em *Environment Variables*, adicione `TURSO_DATABASE_URL` e
+     `TURSO_AUTH_TOKEN`.
+4. **Deploy.** O Vercel builda o frontend, sobe a função Python e encaminha
+   `/api/*` para o FastAPI. Confira em `/api/status` que `db_backend` é
+   `turso`.
+
+Depois disso o app já abre com todo o histórico, e o botão “Sincronizar”
+só busca os concursos novos.
 
 ## Estrutura
 

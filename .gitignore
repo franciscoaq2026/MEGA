@@ -12,6 +12,13 @@ dist/
 *.db
 *.sqlite3
 
+# Segredos / ambiente
+.env
+.env.local
+
 # Sistema / editores
 .DS_Store
 *.log
+
+# Vercel
+.vercel/

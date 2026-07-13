@@ -13,6 +13,7 @@ def status():
         "total_draws": db.count_draws(),
         "ultimo_local": db.latest_local(),
         "proximo": db.get_meta("proximo"),
+        "db_backend": db.backend_name(),
     }
 
 

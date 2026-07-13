@@ -16,7 +16,7 @@ import {
 import { apiGet } from '../lib/api.js'
 import Ball, { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
-import { formatDate } from '../lib/format.js'
+import { formatDate, formatNumber } from '../lib/format.js'
 
 const EMERALD = '#059669'
 const BLUE = '#2563eb'
@@ -254,7 +254,7 @@ export default function Estatisticas() {
       {freq && (
         <Card
           title="Frequência por número"
-          subtitle={`${freq.draws_considered} concursos considerados · média esperada por número: ${freq.expected_per_number}`}
+          subtitle={`${freq.draws_considered} concursos considerados · média esperada por número: ${formatNumber(freq.expected_per_number)}`}
         >
           <div className="overflow-x-auto">
             <div className="min-w-[720px] h-56">
@@ -404,7 +404,7 @@ export default function Estatisticas() {
         {sums && (
           <Card
             title="Soma das dezenas"
-            subtitle={`Média observada: ${sums.mean} · média teórica: ${sums.theoretical_mean} · mín ${sums.min} / máx ${sums.max}`}
+            subtitle={`Média observada: ${formatNumber(sums.mean)} · média teórica: ${formatNumber(sums.theoretical_mean)} · mín ${sums.min} / máx ${sums.max}`}
           >
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
@@ -427,7 +427,7 @@ export default function Estatisticas() {
       {pairs && (
         <Card
           title="Duplas que mais saem juntas"
-          subtitle={`Aparições esperadas por dupla ao acaso: ~${pairs.expected_per_pair} · as campeãs ficam pouco acima disso — flutuação normal`}
+          subtitle={`Aparições esperadas por dupla ao acaso: ~${formatNumber(pairs.expected_per_pair)} · as campeãs ficam pouco acima disso — flutuação normal`}
         >
           <div className="space-y-1.5">
             {pairs.pairs.map((p) => (

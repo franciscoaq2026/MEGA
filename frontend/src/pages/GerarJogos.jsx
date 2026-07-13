@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
+import { addBet } from '../lib/bets.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import { formatMoney } from '../lib/format.js'
@@ -39,6 +41,20 @@ export default function GerarJogos() {
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [concursoSalvar, setConcursoSalvar] = useState('')
+  const [salvos, setSalvos] = useState({}) // índice do jogo -> concurso salvo
+  const [backtest, setBacktest] = useState(null)
+  const [backtestBusy, setBacktestBusy] = useState(false)
+  const [backtestError, setBacktestError] = useState(null)
+
+  useEffect(() => {
+    apiGet('/status')
+      .then((st) => {
+        const prox = st.proximo?.concurso ?? (st.ultimo_local ? st.ultimo_local.concurso + 1 : '')
+        setConcursoSalvar((c) => c || prox)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const precoNum = Number.parseFloat(preco.replace(',', '.')) || 0
@@ -46,6 +62,29 @@ export default function GerarJogos() {
       .then(setOdds)
       .catch(() => setOdds(null))
   }, [dezenas, preco])
+
+  function salvar(i, jogo) {
+    if (!concursoSalvar) return
+    addBet({
+      concurso: concursoSalvar,
+      origem: 'app',
+      estrategia: result.estrategia,
+      dezenas: jogo.dezenas,
+    })
+    setSalvos((s) => ({ ...s, [i]: concursoSalvar }))
+  }
+
+  async function rodarBacktest() {
+    setBacktestBusy(true)
+    setBacktestError(null)
+    try {
+      setBacktest(await apiPost('/backtest?ultimos=100'))
+    } catch (e) {
+      setBacktestError(e.message)
+    } finally {
+      setBacktestBusy(false)
+    }
+  }
 
   async function gerar() {
     setBusy(true)
@@ -58,6 +97,7 @@ export default function GerarJogos() {
         anti_rateio: antiRateio,
       })
       setResult(r)
+      setSalvos({})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -108,13 +148,13 @@ export default function GerarJogos() {
               />
             </label>
             <label className="text-sm">
-              <span className="text-zinc-600">Dezenas por jogo (6–15)</span>
+              <span className="text-zinc-600">Dezenas por jogo (6–20)</span>
               <select
                 value={dezenas}
                 onChange={(e) => setDezenas(Number(e.target.value))}
                 className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
               >
-                {Array.from({ length: 10 }, (_, i) => 6 + i).map((k) => (
+                {Array.from({ length: 15 }, (_, i) => 6 + i).map((k) => (
                   <option key={k} value={k}>
                     {k}
                   </option>
@@ -202,6 +242,16 @@ export default function GerarJogos() {
           title={`Jogos gerados — ${ESTRATEGIAS.find((e) => e.id === result.estrategia)?.nome}`}
           subtitle={result.aviso}
         >
+          <label className="flex items-center gap-2 text-sm mb-3">
+            <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
+            <input
+              type="number"
+              min="1"
+              value={concursoSalvar}
+              onChange={(e) => setConcursoSalvar(e.target.value)}
+              className="w-24 border border-zinc-300 rounded-lg px-2 py-1"
+            />
+          </label>
           <div className="grid sm:grid-cols-2 gap-3">
             {result.jogos.map((j, i) => (
               <div key={i} className="border border-zinc-200 rounded-lg p-3">
@@ -218,14 +268,77 @@ export default function GerarJogos() {
                     tende a dividir com mais gente.
                   </p>
                 )}
+                <div className="mt-2">
+                  {salvos[i] ? (
+                    <span className="text-xs text-emerald-700 font-medium">
+                      ✓ salvo no concurso {salvos[i]} —{' '}
+                      <Link to="/meus-jogos" className="underline">
+                        ver em Meus jogos
+                      </Link>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => salvar(i, j)}
+                      disabled={!concursoSalvar}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-700 font-medium hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      Salvar este jogo
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-          <p className="text-xs text-zinc-500 mt-3">
-            Na etapa “Meus jogos” você poderá salvar um jogo gerado e vinculá-lo a um concurso.
-          </p>
         </Card>
       )}
+
+      <Card
+        title="As estratégias funcionam? Backtest honesto"
+        subtitle="Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (0,6 acerto por jogo)"
+      >
+        {!backtest && (
+          <button
+            onClick={rodarBacktest}
+            disabled={backtestBusy}
+            className="px-4 py-2 rounded-lg border border-zinc-300 bg-white text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {backtestBusy ? 'Simulando…' : 'Rodar backtest (últimos 100 concursos)'}
+          </button>
+        )}
+        {backtestError && <p className="text-sm text-red-600 mt-2">{backtestError}</p>}
+        {backtest && (
+          <div className="space-y-3">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-xs text-zinc-500 border-b border-zinc-200">
+                  <th className="py-1.5 font-medium">Estratégia</th>
+                  <th className="py-1.5 font-medium text-right">Média de acertos/jogo</th>
+                  <th className="py-1.5 font-medium text-right">vs. acaso (0,6)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(backtest.estrategias).map(([nome, r]) => (
+                  <tr key={nome} className="border-b border-zinc-100 last:border-0">
+                    <td className="py-1.5">{ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}</td>
+                    <td className="py-1.5 text-right font-semibold tabular-nums">
+                      {r.media_acertos.toFixed(2).replace('.', ',')}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                      {(r.media_acertos - 0.6 >= 0 ? '+' : '') +
+                        (r.media_acertos - 0.6).toFixed(2).replace('.', ',')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-zinc-500">
+              Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} · todas as
+              estratégias flutuam em torno de 0,6 — nenhuma “sabe” algo sobre o próximo sorteio. Se
+              alguma parecesse muito acima, seria sorte da amostra, não previsão.
+            </p>
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

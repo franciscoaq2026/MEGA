@@ -18,7 +18,7 @@ def _check_valid(jogo, k):
 def test_todas_estrategias_geram_jogos_validos():
     rng = random.Random(1)
     for estrategia in generator.GERADORES:
-        for k in (6, 10, 15):
+        for k in (6, 10, 20):
             jogos = generator.gerar(DRAWS, estrategia, jogos=3, dezenas=k, rng=rng)
             assert len(jogos) == 3
             for j in jogos:
@@ -67,3 +67,8 @@ def test_odds_valores_conhecidos():
     o15 = generator.odds(15)
     assert o15["combos_simples"] == 5005
     assert o15["faixas"]["sena"]["one_in"] == round(1 / (5005 / 50063860))
+
+    # 20 dezenas (máximo atual da Caixa): caso do bolão da Aldeota no 3010
+    o20 = generator.odds(20)
+    assert o20["combos_simples"] == 38760
+    assert o20["faixas"]["sena"]["one_in"] == 1292

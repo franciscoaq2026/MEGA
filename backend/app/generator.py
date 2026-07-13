@@ -150,7 +150,12 @@ def gerar(
 
 
 def odds(k: int, preco_simples: float = 6.0) -> dict:
-    """Probabilidades exatas (hipergeométrica) para um jogo de k dezenas."""
+    """Probabilidades exatas (hipergeométrica) para um jogo de k dezenas.
+
+    A Caixa aceita apostas de 6 a 20 dezenas (limite ampliado de 15 para 20).
+    Ex.: 20 dezenas = C(20,6) = 38.760 combinações → sena em 1 a cada ~1.292
+    concursos — é assim que os grandes bolões de lotérica "ganham sempre".
+    """
     total = comb(60, k)
     faixas = {}
     for nome, m in (("sena", 6), ("quina", 5), ("quadra", 4)):

@@ -17,7 +17,10 @@ import os
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-SEED_CSV = DATA_DIR / "seed_megasena.csv"
+# Histórico embutido no repositório (dezenas de todos os concursos + datas
+# onde disponíveis). Serve de fonte para o /sync quando as APIs da Caixa/guidi
+# estão inacessíveis — o caso do Vercel, cujo IP de datacenter é bloqueado.
+SEED_JSON = DATA_DIR / "seed_megasena.json"
 
 TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
 TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
@@ -88,14 +91,31 @@ def _write(statements: list[tuple[str, tuple]]) -> None:
         conn.close()
 
 
+def load_bundled_seed() -> list[dict]:
+    """Lê o histórico embutido (backend/data/seed_megasena.json)."""
+    if not SEED_JSON.exists():
+        return []
+    data = json.loads(SEED_JSON.read_text(encoding="utf-8"))
+    return [
+        {
+            "concurso": int(r["concurso"]),
+            "data": r.get("data") or "",
+            "dezenas": sorted(int(d) for d in r["dezenas"]),
+        }
+        for r in data
+    ]
+
+
 def init_db() -> None:
     _write([(stmt, ()) for stmt in SCHEMA])
-    if count_draws() == 0 and SEED_CSV.exists():
-        from .csv_utils import parse_draws_csv
-
-        rows, _errors = parse_draws_csv(SEED_CSV.read_text(encoding="utf-8"))
-        if rows:
-            upsert_draws(rows)
+    # Auto-carrega o seed apenas no SQLite local (desenvolvimento). No Turso o
+    # carregamento é feito em lotes pelo endpoint /sync, para não estourar o
+    # tempo limite da função no primeiro cold start. Desligável nos testes.
+    autoseed = os.environ.get("MEGASENA_AUTOSEED", "1") == "1"
+    if autoseed and not USE_TURSO and count_draws() == 0:
+        seed = load_bundled_seed()
+        if seed:
+            upsert_draws(seed)
 
 
 def row_to_draw(row: dict) -> dict:

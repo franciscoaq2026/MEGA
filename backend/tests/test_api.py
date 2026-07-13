@@ -2,6 +2,7 @@ import os
 import tempfile
 
 os.environ["MEGASENA_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
+os.environ["MEGASENA_AUTOSEED"] = "0"  # testes começam com banco vazio
 
 from fastapi.testclient import TestClient  # noqa: E402
 

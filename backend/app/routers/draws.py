@@ -33,17 +33,54 @@ def draw(concurso: int):
     return found
 
 
+def _sync_from_seed(max_batch: int) -> dict:
+    """Fallback: carrega o histórico embutido no repositório, em lotes.
+
+    Usado quando as APIs da Caixa/guidi não respondem (ex.: no Vercel, cujo
+    IP de datacenter é bloqueado por elas). Os dados já vêm no deploy, então
+    aqui é só cópia local do arquivo -> banco, sem rede externa.
+    """
+    seed = db.load_bundled_seed()
+    if not seed:
+        raise HTTPException(
+            502,
+            "APIs de resultados indisponíveis e nenhum histórico embutido encontrado. "
+            "Use a importação de CSV.",
+        )
+    existing = db.all_concursos()
+    missing = [s for s in seed if s["concurso"] not in existing]
+    batch = missing[:max_batch]
+    if batch:
+        db.upsert_draws(batch)
+
+    last = max(s["concurso"] for s in seed)
+    db.set_meta(
+        "proximo",
+        {"concurso": last + 1, "data": None, "estimativa": None, "acumulado": None},
+    )
+    return {
+        "source": "dados-embutidos",
+        "latest_remote": last,
+        "added": len(batch),
+        "errors": [],
+        "total_local": db.count_draws(),
+        "remaining": len(missing) - len(batch),
+        "proximo": db.get_meta("proximo"),
+    }
+
+
 @router.post("/sync")
-async def sync(max_batch: int = Query(300, ge=1, le=1000)):
+async def sync(max_batch: int = Query(200, ge=1, le=1000)):
     """Sincronização incremental: busca só o que falta, em lotes.
 
-    O frontend chama repetidamente até remaining == 0 (mostrando progresso),
-    o que também respeita o limite de tempo por requisição em serverless.
+    Tenta a API da Caixa (com fallback guidi) — que funciona a partir de um IP
+    residencial. Se ambas falharem (caso do Vercel), cai para o histórico
+    embutido no repositório. O frontend chama repetidamente até remaining == 0.
     """
     try:
         latest = await fetch_latest()
-    except FetchError as e:
-        raise HTTPException(502, f"APIs de resultados indisponíveis: {e}") from e
+    except FetchError:
+        return _sync_from_seed(max_batch)
 
     existing = db.all_concursos()
     latest_is_new = latest["concurso"] not in existing
@@ -59,12 +96,12 @@ async def sync(max_batch: int = Query(300, ge=1, le=1000)):
         if added:
             db.upsert_draws(added)
         if not added and errors:
-            raise HTTPException(
-                502, f"sincronização travada: {len(errors)} falhas (ex.: {errors[0]})"
-            )
+            # APIs deram latest mas falharam no histórico: usa o embutido.
+            return _sync_from_seed(max_batch)
 
     total = db.count_draws()
     return {
+        "source": "api",
         "latest_remote": latest["concurso"],
         "added": len(added) + (1 if latest_is_new else 0),
         "errors": errors[:5],

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Mega-Sena Stats API", version="0.1.0")
@@ -14,8 +14,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+router = APIRouter()
 
-@app.get("/api/health")
+
+@router.get("/health")
 def health():
     return {
         "status": "ok",
@@ -23,3 +25,10 @@ def health():
         "version": app.version,
         "server_time": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# As rotas ficam disponíveis em /api/... (uso normal) e também sem o prefixo,
+# porque algumas plataformas (ex.: Vercel multi-service) removem o /api ao
+# encaminhar a requisição para o serviço.
+app.include_router(router, prefix="/api")
+app.include_router(router, include_in_schema=False)

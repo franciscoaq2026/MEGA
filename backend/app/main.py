@@ -1,9 +1,20 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Mega-Sena Stats API", version="0.1.0")
+from .db import init_db
+from .routers.draws import router as draws_router
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Mega-Sena Stats API", version="0.2.0", lifespan=lifespan)
 
 # Em desenvolvimento o frontend roda em outra porta (Vite, 5173).
 # O proxy do Vite já encaminha /api, mas o CORS permite também acesso direto.
@@ -14,10 +25,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-router = APIRouter()
+api = APIRouter()
+api.include_router(draws_router)
 
 
-@router.get("/health")
+@api.get("/health")
 def health():
     return {
         "status": "ok",
@@ -30,5 +42,5 @@ def health():
 # As rotas ficam disponíveis em /api/... (uso normal) e também sem o prefixo,
 # porque algumas plataformas (ex.: Vercel multi-service) removem o /api ao
 # encaminhar a requisição para o serviço.
-app.include_router(router, prefix="/api")
-app.include_router(router, include_in_schema=False)
+app.include_router(api, prefix="/api")
+app.include_router(api, include_in_schema=False)

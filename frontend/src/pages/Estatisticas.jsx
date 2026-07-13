@@ -43,8 +43,8 @@ function Tip({ active, payload, label, render }) {
 function Heatmap({ freq }) {
   const max = Math.max(1, ...freq.map((f) => f.count))
   return (
-    <div className="overflow-x-auto">
-      <div className="grid grid-cols-10 gap-1 min-w-[560px]">
+    <div>
+      <div className="grid grid-cols-6 sm:grid-cols-10 gap-1">
         {freq.map(({ n, count }) => {
           const t = count / max
           return (

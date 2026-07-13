@@ -10,4 +10,16 @@ export default defineConfig({
       '/api': 'http://localhost:8000',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Separa as libs pesadas do código do app: carregamento inicial
+        // mais rápido e cache melhor entre deploys
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          recharts: ['recharts'],
+        },
+      },
+    },
+  },
 })

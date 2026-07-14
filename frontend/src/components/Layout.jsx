@@ -6,6 +6,7 @@ const links = [
   { to: '/sorteios', label: 'Sorteios' },
   { to: '/estatisticas', label: 'Estatísticas' },
   { to: '/gerar', label: 'Gerar jogos' },
+  { to: '/fabrica', label: 'Fábrica' },
   { to: '/meus-jogos', label: 'Meus jogos' },
 ]
 

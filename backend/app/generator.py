@@ -9,8 +9,10 @@ POPULARES (se um prêmio vier, divide-se com menos gente).
 
 import random
 from collections import Counter
+from itertools import combinations
 from math import comb
 
+from . import analysis
 from .stats import current_delays
 
 NUMBERS = list(range(1, 61))
@@ -147,6 +149,167 @@ def gerar(
             }
         )
     return resultado
+
+
+def _passa_filtros(dezenas: list[int], filtros: dict, anterior: list[int] | None) -> bool:
+    m = analysis.metrics(dezenas, anterior)
+
+    def faixa(chave: str, valor) -> bool:
+        rng = filtros.get(chave)
+        if not rng:
+            return True
+        lo, hi = rng
+        return (lo is None or valor >= lo) and (hi is None or valor <= hi)
+
+    if not faixa("soma", m["soma"]):
+        return False
+    if not faixa("pares", m["pares"]):
+        return False
+    if not faixa("primos", m["primos"]):
+        return False
+    if not faixa("moldura", m["moldura"]):
+        return False
+    if not faixa("baixas", m["baixas"]):
+        return False
+    cons_max = filtros.get("consecutivos_max")
+    if cons_max is not None and m["consecutivos"] > cons_max:
+        return False
+    if m["repetidas_anterior"] is not None and not faixa(
+        "repetidas_anterior", m["repetidas_anterior"]
+    ):
+        return False
+    return True
+
+
+def gerar_avancado(
+    draws: list[dict],
+    jogos: int,
+    dezenas: int,
+    filtros: dict | None = None,
+    incluir: list[int] | None = None,
+    excluir: list[int] | None = None,
+    anti_rateio: bool = False,
+    rng: random.Random | None = None,
+    max_tentativas: int = 20000,
+) -> dict:
+    """Gera jogos que passam por TODOS os filtros ativos (rejection sampling).
+
+    incluir: dezenas fixas em todo jogo. excluir: dezenas proibidas.
+    Retorna os jogos e um relatório (quantas tentativas, se afrouxou)."""
+    rng = rng or random.Random()
+    filtros = filtros or {}
+    incluir = sorted(set(incluir or []))
+    excluir = set(excluir or [])
+    if set(incluir) & excluir:
+        raise ValueError("uma dezena não pode estar em incluir e excluir ao mesmo tempo")
+    if len(incluir) > dezenas:
+        raise ValueError("mais dezenas fixas do que o tamanho do jogo")
+
+    pool = [n for n in NUMBERS if n not in excluir and n not in incluir]
+    faltam = dezenas - len(incluir)
+    if faltam > len(pool):
+        raise ValueError("dezenas fixas/excluídas incompatíveis com o tamanho do jogo")
+
+    anterior = draws[-1]["dezenas"] if draws else None
+    senas = {tuple(sorted(d["dezenas"])) for d in draws}
+    resultado: list[dict] = []
+    vistos: set[tuple] = set()
+    tentativas = 0
+
+    while len(resultado) < jogos and tentativas < max_tentativas:
+        tentativas += 1
+        jogo = sorted(incluir + rng.sample(pool, faltam))
+        chave = tuple(jogo)
+        if chave in vistos:
+            continue
+        if not _passa_filtros(jogo, filtros, anterior):
+            continue
+        motivos = padrao_popular(jogo, senas)
+        if anti_rateio and motivos:
+            continue
+        vistos.add(chave)
+        m = analysis.metrics(jogo, anterior)
+        resultado.append({"dezenas": jogo, "metrics": m, "padroes_populares": motivos})
+
+    return {
+        "jogos": resultado,
+        "solicitados": jogos,
+        "gerados": len(resultado),
+        "tentativas": tentativas,
+        "filtros_muito_restritivos": len(resultado) < jogos,
+    }
+
+
+def _guarantee_table(k: int) -> list[dict]:
+    """Roda completa de k dezenas (todas as C(k,6) apostas): se H das suas k
+    dezenas forem sorteadas, existe uma aposta com exatamente H acertos."""
+    tabela = []
+    for h in range(6, 3, -1):
+        faixa = {6: "sena", 5: "quina", 4: "quadra"}[h]
+        tabela.append(
+            {
+                "acertos_entre_suas": h,
+                "garante": faixa,
+                "explicacao": f"se {h} das suas {k} dezenas saírem, você garante uma {faixa}",
+            }
+        )
+    return tabela
+
+
+def roda_completa(dezenas: list[int]) -> dict:
+    k = len(dezenas)
+    jogos = [sorted(c) for c in combinations(sorted(dezenas), 6)]
+    return {
+        "tipo": "completa",
+        "dezenas_escolhidas": sorted(dezenas),
+        "num_jogos": len(jogos),
+        "custo_estimado": len(jogos) * 6.0,
+        "garantias": _guarantee_table(k),
+        "jogos": jogos,
+    }
+
+
+def fechamento_reduzido(dezenas: list[int], garantia: int) -> dict:
+    """Fechamento reduzido: menos apostas que a roda completa, garantindo pelo
+    menos `garantia` acertos SE as 6 dezenas sorteadas estiverem entre as suas
+    escolhidas. Cobertura gulosa (com bitmask p/ velocidade) + verificação
+    honesta da garantia. garantia ∈ {4, 5}."""
+    ds = sorted(dezenas)
+    k = len(ds)
+    combos = [frozenset(c) for c in combinations(ds, 6)]
+    # alvos == candidatos (todos os 6-subconjuntos das suas dezenas)
+    # cobertura de cada candidato como bitmask sobre os índices dos alvos
+    cov = []
+    for ap in combos:
+        mask = 0
+        for j, alvo in enumerate(combos):
+            if len(ap & alvo) >= garantia:
+                mask |= 1 << j
+        cov.append(mask)
+
+    alvo_total = (1 << len(combos)) - 1
+    faltam = alvo_total
+    escolhidas: list[int] = []
+    while faltam:
+        melhor = max(range(len(combos)), key=lambda i: (cov[i] & faltam).bit_count())
+        if (cov[melhor] & faltam) == 0:
+            break
+        escolhidas.append(melhor)
+        faltam &= ~cov[melhor]
+
+    garantido = faltam == 0
+    faixa = {6: "sena", 5: "quina", 4: "quadra"}[garantia]
+    return {
+        "tipo": "reduzida",
+        "dezenas_escolhidas": ds,
+        "num_jogos": len(escolhidas),
+        "custo_estimado": len(escolhidas) * 6.0,
+        "garantia_acertos": garantia,
+        "garantia_faixa": faixa,
+        "garantia_verificada": garantido,
+        "num_jogos_roda_completa": comb(k, 6),
+        "jogos": [sorted(combos[i]) for i in escolhidas],
+    }
 
 
 def odds(k: int, preco_simples: float = 6.0) -> dict:

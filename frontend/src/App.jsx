@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Sorteios from './pages/Sorteios.jsx'
 import GerarJogos from './pages/GerarJogos.jsx'
+import Fabrica from './pages/Fabrica.jsx'
 import MeusJogos from './pages/MeusJogos.jsx'
 
 // Estatísticas carrega o Recharts (pesado) — só baixa ao abrir a página
@@ -26,6 +27,7 @@ export default function App() {
           }
         />
         <Route path="gerar" element={<GerarJogos />} />
+        <Route path="fabrica" element={<Fabrica />} />
         <Route path="meus-jogos" element={<MeusJogos />} />
       </Route>
     </Routes>

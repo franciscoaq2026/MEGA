@@ -47,7 +47,7 @@ def _sync_from_seed(max_batch: int) -> dict:
             "APIs de resultados indisponíveis e nenhum histórico embutido encontrado. "
             "Use a importação de CSV.",
         )
-    existing = db.all_concursos()
+    existing = db.concursos_com_data()
     missing = [s for s in seed if s["concurso"] not in existing]
     batch = missing[:max_batch]
     if batch:
@@ -82,31 +82,34 @@ async def sync(max_batch: int = Query(200, ge=1, le=1000)):
     except FetchError:
         return _sync_from_seed(max_batch)
 
-    existing = db.all_concursos()
-    latest_is_new = latest["concurso"] not in existing
-    db.upsert_draws([latest])
     db.set_meta("proximo", latest["proximo"])
+    latest_num = latest["concurso"]
 
-    missing = [n for n in range(1, latest["concurso"]) if n not in existing]
-    batch = missing[:max_batch]
+    # Precisa buscar: concursos ausentes OU salvos sem data.
+    dated = db.concursos_com_data()
+    need = [n for n in range(1, latest_num + 1) if n not in dated]
+    batch_nums = need[:max_batch]
 
-    added, errors = ([], [])
-    if batch:
-        added, errors = await fetch_many(batch)
-        if added:
-            db.upsert_draws(added)
-        if not added and errors:
-            # APIs deram latest mas falharam no histórico: usa o embutido.
-            return _sync_from_seed(max_batch)
+    # Resolve cada concurso: primeiro do histórico embutido (instantâneo, sem
+    # rede), e só o que for mais novo que o seed vem da rede (maickon).
+    seed = {s["concurso"]: s for s in db.load_bundled_seed()}
+    from_seed = [seed[n] for n in batch_nums if n in seed]
+    to_fetch = [n for n in batch_nums if n not in seed]
 
-    total = db.count_draws()
+    fetched, errors = ([], [])
+    if to_fetch:
+        fetched, errors = await fetch_many(to_fetch)
+    rows = from_seed + fetched
+    if rows:
+        db.upsert_draws(rows)
+
     return {
-        "source": "api",
-        "latest_remote": latest["concurso"],
-        "added": len(added) + (1 if latest_is_new else 0),
+        "source": "api+seed",
+        "latest_remote": latest_num,
+        "added": len(rows),
         "errors": errors[:5],
-        "total_local": total,
-        "remaining": max(latest["concurso"] - total, 0),
+        "total_local": db.count_draws(),
+        "remaining": len(need) - len(batch_nums),
         "proximo": latest["proximo"],
     }
 

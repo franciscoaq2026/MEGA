@@ -147,6 +147,15 @@ def all_concursos() -> set[int]:
     return {r["concurso"] for r in _query("SELECT concurso FROM draws")}
 
 
+def concursos_com_data() -> set[int]:
+    """Concursos já salvos E com data preenchida. O sync usa isto para também
+    completar a data de sorteios que entraram antes sem data."""
+    return {
+        r["concurso"]
+        for r in _query("SELECT concurso FROM draws WHERE data != '' AND data IS NOT NULL")
+    }
+
+
 def latest_local() -> dict | None:
     rows = _query("SELECT * FROM draws ORDER BY concurso DESC LIMIT 1")
     return row_to_draw(rows[0]) if rows else None

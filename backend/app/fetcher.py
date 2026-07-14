@@ -11,6 +11,12 @@ import httpx
 
 CAIXA_BASE = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
 GUIDI_BASE = "https://api.guidi.dev.br/loteria/megasena"
+# Espelho estático no GitHub (formato idêntico ao da Caixa), atualizado por um
+# robô/cron. É a única fonte que funciona a partir de um datacenter (Vercel),
+# já que a Caixa e a guidi bloqueiam IPs que não sejam residenciais.
+MAICKON_BASE = (
+    "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena"
+)
 
 HEADERS = {
     "Accept": "application/json",
@@ -73,7 +79,11 @@ class Fetcher:
     def _urls(self, concurso: int | None) -> list[str]:
         caixa = f"{CAIXA_BASE}/{concurso}" if concurso else CAIXA_BASE
         guidi = f"{GUIDI_BASE}/{concurso}" if concurso else f"{GUIDI_BASE}/ultimo"
-        return [caixa, guidi] if self.caixa_ok else [guidi, caixa]
+        maickon = f"{MAICKON_BASE}/{concurso}.json" if concurso else f"{MAICKON_BASE}/_ultimo.json"
+        # Caixa/guidi primeiro (mais frescos, funcionam em IP residencial);
+        # o espelho do GitHub por último, como rede de segurança do Vercel.
+        base = [caixa, guidi] if self.caixa_ok else [guidi, caixa]
+        return [*base, maickon]
 
     async def fetch(self, concurso: int | None = None) -> dict:
         last_error: Exception | None = None

@@ -5,6 +5,77 @@ import { formatDate } from '../lib/format.js'
 
 const PAGE = 24
 
+// Fontes oficiais acessadas DIRETO do navegador do usuário. A Caixa/guidi
+// bloqueiam IPs de datacenter (o servidor no Vercel), mas não o IP residencial
+// de quem usa o site — então os concursos mais novos entram por aqui.
+const FONTES_DIRETAS = [
+  {
+    nome: 'Caixa',
+    url: (n) =>
+      n
+        ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${n}`
+        : 'https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena',
+  },
+  {
+    nome: 'guidi',
+    url: (n) =>
+      n
+        ? `https://api.guidi.dev.br/loteria/megasena/${n}`
+        : 'https://api.guidi.dev.br/loteria/megasena/ultimo',
+  },
+]
+
+async function fetchDireto(url) {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), 12000)
+  try {
+    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+// Busca do navegador os concursos que faltam depois do último salvo e envia
+// os payloads brutos ao backend (/import-payloads), que valida e grava.
+async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress) {
+  for (const fonte of FONTES_DIRETAS) {
+    try {
+      const ultimo = await fetchDireto(fonte.url())
+      const numUltimo = Number(ultimo.numero ?? ultimo.concurso)
+      if (!Number.isFinite(numUltimo) || numUltimo <= ultimoLocal) {
+        return { fonte: fonte.nome, enviados: 0, atualRemoto: numUltimo || ultimoLocal }
+      }
+      const faltando = []
+      for (let n = ultimoLocal + 1; n < numUltimo; n++) faltando.push(n)
+      const alvoTotal = faltando.length + 1
+
+      let payloads = [ultimo]
+      let enviados = 0
+      const flush = async () => {
+        if (!payloads.length) return
+        const r = await apiPostFn('/import-payloads', { payloads })
+        enviados += r.added
+        payloads = []
+        onProgress(enviados, alvoTotal)
+      }
+
+      for (let i = 0; i < faltando.length; i += 10) {
+        const lote = faltando.slice(i, i + 10)
+        const res = await Promise.allSettled(lote.map((n) => fetchDireto(fonte.url(n))))
+        payloads.push(...res.filter((r) => r.status === 'fulfilled').map((r) => r.value))
+        if (payloads.length >= 25) await flush()
+      }
+      await flush()
+      return { fonte: fonte.nome, enviados, atualRemoto: numUltimo }
+    } catch {
+      // CORS ou rede: tenta a próxima fonte; se todas falharem, retorna null
+    }
+  }
+  return null
+}
+
 export default function Sorteios() {
   const [status, setStatus] = useState(null)
   const [items, setItems] = useState([])
@@ -36,13 +107,41 @@ export default function Sorteios() {
     setMessage(null)
     let added = 0
     try {
+      // Fase 1 — servidor: seed embutido + espelhos (rápido, cobre o histórico)
       for (;;) {
         const r = await apiPost('/sync')
         added += r.added
-        setSync({ added, remaining: r.remaining })
+        setSync({ added, remaining: r.remaining, fase: 'servidor' })
         if (r.remaining <= 0) break
       }
-      setMessage({ type: 'ok', text: `Sincronizado: ${added} concurso(s) novo(s).` })
+
+      // Fase 2 — navegador: busca na Caixa (pelo SEU IP, que não é bloqueado)
+      // os concursos mais novos que nenhuma fonte de servidor tem ainda
+      const st = await apiGet('/status')
+      const ultimoLocal = st.ultimo_local?.concurso ?? 0
+      let direto = null
+      if (ultimoLocal > 0) {
+        setSync({ added, remaining: 0, fase: 'navegador' })
+        direto = await sincronizarPeloNavegador(ultimoLocal, apiPost, (env, alvo) =>
+          setSync({ added: added + env, remaining: Math.max(alvo - env, 0), fase: 'navegador' }),
+        )
+      }
+
+      const totalNovo = added + (direto?.enviados ?? 0)
+      if (direto) {
+        setMessage({
+          type: 'ok',
+          text:
+            direto.enviados > 0
+              ? `Sincronizado: ${totalNovo} concurso(s) novo(s) — ${direto.enviados} vindo(s) da ${direto.fonte} direto pelo seu navegador. Tudo atualizado até o concurso ${direto.atualRemoto}.`
+              : `Sincronizado: ${totalNovo} concurso(s) novo(s). Você já está no concurso mais recente (${direto.atualRemoto}).`,
+        })
+      } else {
+        setMessage({
+          type: 'ok',
+          text: `Sincronizado: ${totalNovo} concurso(s) novo(s). Não consegui consultar a Caixa pelo navegador (rede/CORS) — os dados vão até o espelho mais recente disponível.`,
+        })
+      }
       await reload()
     } catch (e) {
       setMessage({
@@ -93,7 +192,11 @@ export default function Sorteios() {
             disabled={busy}
             className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
           >
-            {sync ? `Sincronizando… ${sync.added} baixados, faltam ${sync.remaining}` : 'Sincronizar sorteios'}
+            {sync
+              ? sync.fase === 'navegador'
+                ? `Buscando novos na Caixa… ${sync.added} baixados${sync.remaining ? `, faltam ~${sync.remaining}` : ''}`
+                : `Sincronizando… ${sync.added} baixados, faltam ${sync.remaining}`
+              : 'Sincronizar sorteios'}
           </button>
           <button
             onClick={() => fileRef.current?.click()}

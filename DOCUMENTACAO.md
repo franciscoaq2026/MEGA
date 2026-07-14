@@ -112,10 +112,16 @@ sessão de sync, as próximas já começam pelo fallback):
 2. **guidi.dev.br** (espelho da Caixa) — idem;
 3. **maickon/free-apiloterias no GitHub raw** — espelho estático em
    `raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena/{N}.json`
-   (e `_ultimo.json`), **formato idêntico ao payload da Caixa**, atualizado por
-   um robô (cron) que commita novos resultados. GitHub **não bloqueia**
-   datacenter → é a fonte que funciona no Vercel. Pode ficar dias atrás do
-   sorteio mais recente (limitação aceita).
+   (e `_ultimo.json`), **formato idêntico ao payload da Caixa**. GitHub **não
+   bloqueia** datacenter → funciona no Vercel, mas o robô que o atualizava
+   também foi bloqueado pela Caixa (parou no concurso ~2995, abr/2026);
+4. **O navegador do usuário** (a fonte que resolve o frescor): ao clicar em
+   "Sincronizar", o frontend também busca os concursos novos **direto da
+   Caixa/guidi a partir do navegador** — o IP residencial do usuário não é
+   bloqueado — e envia os payloads brutos para `POST /api/import-payloads`,
+   onde o servidor valida com o mesmo `parse_payload()` e grava no banco.
+   Assim, cada visita do usuário atualiza o app até o concurso mais recente,
+   sem depender de nenhum espelho.
 
 `parse_payload()` normaliza qualquer uma das três para
 `{concurso:int, data:"YYYY-MM-DD", dezenas:[6 ints ordenados], proximo:{...}}`.
@@ -267,6 +273,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/draws/{n}` | um concurso |
 | `POST /api/sync?max_batch=200` | sincronização incremental (ver §3.4) |
 | `POST /api/import-csv` | multipart CSV (plano C) |
+| `POST /api/import-payloads` | `{payloads:[<json bruto Caixa/guidi>]}` — enviados pelo navegador do usuário (§3.2 item 4) |
 | `GET /api/stats/frequency?window=0\|10\|25\|50\|100` | frequência + hot/cold |
 | `GET /api/stats/delay` | atraso atual por número + top 10 |
 | `GET /api/stats/parity` | pares×ímpares observado vs. teórico |
@@ -388,9 +395,10 @@ Variáveis úteis: `MEGASENA_DB_PATH` (caminho do SQLite), `MEGASENA_AUTOSEED=0`
 
 ## 9. Limitações conhecidas e decisões de design
 
-1. **Frescor dos dados em produção** depende do espelho no GitHub (a Caixa
-   bloqueia datacenter); pode atrasar dias. Correção manual: sincronizar via
-   `seed_turso.py` de um IP residencial.
+1. **Frescor dos dados** depende de alguém abrir o site e clicar em
+   "Sincronizar" a partir de um IP residencial (a fase navegador→Caixa faz o
+   resto). Se as fontes oficiais bloquearem também CORS do navegador, restam:
+   espelho GitHub (defasado) e `seed_turso.py`/CSV manual.
 2. **Apostas no localStorage**: não sincronizam entre aparelhos (mitigação:
    exportar/importar backup). Escolha deliberada para evitar auth/banco de
    dados de usuário.

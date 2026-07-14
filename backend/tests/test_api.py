@@ -87,3 +87,37 @@ def test_sync_incremental(monkeypatch):
         # status agora tem o "próximo concurso" vindo da API
         st = c.get("/api/status").json()
         assert st["proximo"]["concurso"] == 6
+
+
+def test_import_payloads_formato_caixa():
+    """O navegador do usuário envia payloads brutos no formato da Caixa."""
+    payload = {
+        "numero": 3050,
+        "dataApuracao": "10/07/2026",
+        "listaDezenas": ["05", "12", "23", "34", "45", "56"],
+        "numeroConcursoProximo": 3051,
+        "dataProximoConcurso": "12/07/2026",
+        "valorEstimadoProximoConcurso": 40000000,
+        "acumulado": True,
+    }
+    invalido = {"numero": None, "listaDezenas": ["1", "2"]}
+    with make_client() as c:
+        r = c.post("/api/import-payloads", json={"payloads": [payload, invalido]})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["added"] == 1
+        assert body["skipped"] == 1
+
+        st = c.get("/api/status").json()
+        assert st["ultimo_local"]["concurso"] == 3050
+        assert st["ultimo_local"]["dezenas"] == [5, 12, 23, 34, 45, 56]
+        assert st["proximo"]["concurso"] == 3051
+
+        # payload mais antigo que o último não sobrescreve o meta "proximo"
+        antigo = dict(payload, numero=3040, numeroConcursoProximo=3041)
+        c.post("/api/import-payloads", json={"payloads": [antigo]})
+        assert c.get("/api/status").json()["proximo"]["concurso"] == 3051
+
+        # só payloads inválidos -> 400
+        r = c.post("/api/import-payloads", json={"payloads": [invalido]})
+        assert r.status_code == 400

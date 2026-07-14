@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 
 from .. import db
 from ..csv_utils import parse_draws_csv
-from ..fetcher import FetchError, fetch_latest, fetch_many
+from ..fetcher import FetchError, fetch_latest, fetch_many, parse_payload
 
 router = APIRouter(tags=["sorteios"])
 
@@ -111,6 +112,44 @@ async def sync(max_batch: int = Query(200, ge=1, le=1000)):
         "total_local": db.count_draws(),
         "remaining": len(need) - len(batch_nums),
         "proximo": latest["proximo"],
+    }
+
+
+class PayloadsImport(BaseModel):
+    payloads: list[dict] = Field(min_length=1, max_length=200)
+
+
+@router.post("/import-payloads")
+def import_payloads(req: PayloadsImport):
+    """Recebe payloads brutos (formato Caixa/guidi) buscados PELO NAVEGADOR
+    do usuário e grava no banco.
+
+    Por quê: a Caixa/guidi bloqueiam IPs de datacenter (o servidor), mas não
+    o IP residencial do usuário. Então o frontend busca os concursos novos
+    direto no navegador e repassa para cá — o servidor valida com o mesmo
+    parser das fontes oficiais antes de gravar.
+    """
+    rows: list[dict] = []
+    errors: list[str] = []
+    for p in req.payloads:
+        try:
+            rows.append(parse_payload(p))
+        except Exception as e:  # noqa: BLE001 - payload inválido é só pulado
+            errors.append(str(e))
+    if not rows:
+        raise HTTPException(400, f"nenhum payload válido ({errors[:3]})")
+
+    db.upsert_draws(rows)
+    newest = max(rows, key=lambda r: r["concurso"])
+    ultimo = db.latest_local()
+    if newest["proximo"].get("concurso") and ultimo and newest["concurso"] >= ultimo["concurso"]:
+        db.set_meta("proximo", newest["proximo"])
+
+    return {
+        "added": len(rows),
+        "skipped": len(errors),
+        "errors": errors[:5],
+        "total_draws": db.count_draws(),
     }
 
 

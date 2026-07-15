@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../lib/api.js'
 import { addBet } from '../lib/bets.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
+import Help from '../components/Help.jsx'
 import Volante from '../components/Volante.jsx'
 import MetricBadges from '../components/MetricBadges.jsx'
 import { formatMoney, formatNumber } from '../lib/format.js'
@@ -15,12 +16,12 @@ const TABS = [
 ]
 
 const FILTROS = [
-  ['soma', 'Soma das dezenas'],
-  ['pares', 'Quantidade de pares'],
-  ['primos', 'Números primos'],
-  ['moldura', 'Dezenas na moldura'],
-  ['baixas', 'Dezenas baixas (1–30)'],
-  ['repetidas_anterior', 'Repetidas do último sorteio'],
+  ['soma', 'Soma das dezenas', 'A soma dos números do jogo. Os sorteios costumam somar entre ~132 e 234 (média 183). Este filtro descarta jogos fora da faixa que você definir. É cosmético — não muda a chance.'],
+  ['pares', 'Quantidade de pares', 'Quantos números pares o jogo tem. O comum é 1 a 5 pares. Só organiza a “cara” do jogo; não altera a probabilidade.'],
+  ['primos', 'Números primos', 'Quantos primos (2, 3, 5, 7, 11, 13…) o jogo tem. Típico: 0 a 3. Cosmético.'],
+  ['moldura', 'Dezenas na moldura', 'Quantos números caem na borda do volante (primeira/última linha ou coluna). Puro padrão visual do cartão.'],
+  ['baixas', 'Dezenas baixas (1–30)', 'Quantos números são da metade de baixo (1 a 30). Serve para equilibrar baixas × altas. Cosmético.'],
+  ['repetidas_anterior', 'Repetidas do último sorteio', 'Quantos números do seu jogo saíram no concurso anterior. Normalmente 0 ou 1 número se repete de um sorteio para o outro.'],
 ]
 
 function parseDezenas(txt) {
@@ -79,7 +80,7 @@ function SaveRow({ jogos, estrategia }) {
 
 /* ----------------------------- Gerador avançado ----------------------------- */
 
-function RangeFilter({ label, info, value, onChange }) {
+function RangeFilter({ label, help, info, value, onChange }) {
   const on = value.enabled
   return (
     <div className={`border rounded-lg p-2.5 ${on ? 'border-emerald-300 bg-emerald-50/40' : 'border-zinc-200'}`}>
@@ -91,6 +92,7 @@ function RangeFilter({ label, info, value, onChange }) {
           className="accent-emerald-600"
         />
         <span className="font-medium">{label}</span>
+        {help && <Help text={help} />}
       </label>
       {info && (
         <p className="text-[11px] text-zinc-500 mt-0.5">
@@ -169,17 +171,21 @@ function GeradorAvancado({ ranges }) {
         subtitle="Gera apenas jogos que passam em TODOS os filtros ativos. Os defaults vêm da faixa típica do histórico."
       >
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {FILTROS.map(([k, label]) => (
+          {FILTROS.map(([k, label, help]) => (
             <RangeFilter
               key={k}
               label={label}
+              help={help}
               info={r[k]}
               value={filtros[k] || { enabled: false, min: '', max: '' }}
               onChange={(v) => setFiltros((prev) => ({ ...prev, [k]: v }))}
             />
           ))}
           <div className="border border-zinc-200 rounded-lg p-2.5">
-            <p className="text-sm font-medium">Máx. de consecutivos</p>
+            <p className="text-sm font-medium inline-flex items-center gap-1.5">
+              Máx. de consecutivos
+              <Help text="Limita sequências como 21-22-23. Ex.: “até 3 seguidos” evita jogos com muitos números em fila. Só afeta a aparência do jogo." />
+            </p>
             <p className="text-[11px] text-zinc-500 mt-0.5">evita sequências longas</p>
             <select
               value={consecMax}
@@ -197,7 +203,10 @@ function GeradorAvancado({ ranges }) {
 
         <div className="grid sm:grid-cols-2 gap-3 mt-3">
           <label className="text-sm">
-            <span className="text-zinc-600">Dezenas fixas (sempre entram)</span>
+            <span className="text-zinc-600 inline-flex items-center gap-1.5">
+              Dezenas fixas (sempre entram)
+              <Help text="Números que você quer em TODOS os jogos gerados. Ex.: se você sempre joga o 7 e o 13, coloque-os aqui." />
+            </span>
             <input
               value={incluir}
               onChange={(e) => setIncluir(e.target.value)}
@@ -206,7 +215,10 @@ function GeradorAvancado({ ranges }) {
             />
           </label>
           <label className="text-sm">
-            <span className="text-zinc-600">Dezenas excluídas (nunca entram)</span>
+            <span className="text-zinc-600 inline-flex items-center gap-1.5">
+              Dezenas excluídas (nunca entram)
+              <Help text="Números que nunca devem aparecer nos jogos gerados. Ex.: números que você tem certeza de que não quer jogar." />
+            </span>
             <input
               value={excluir}
               onChange={(e) => setExcluir(e.target.value)}
@@ -218,7 +230,10 @@ function GeradorAvancado({ ranges }) {
 
         <div className="grid sm:grid-cols-3 gap-4 mt-3 items-end">
           <label className="text-sm">
-            <span className="text-zinc-600">Quantos jogos</span>
+            <span className="text-zinc-600 inline-flex items-center gap-1.5">
+              Quantos jogos
+              <Help text="Quantas apostas gerar que passem em TODOS os filtros marcados (1 a 50). Se os filtros forem muito apertados, ele pode gerar menos do que você pediu e avisa." />
+            </span>
             <input
               type="number"
               min="1"
@@ -229,7 +244,10 @@ function GeradorAvancado({ ranges }) {
             />
           </label>
           <label className="text-sm">
-            <span className="text-zinc-600">Dezenas por jogo</span>
+            <span className="text-zinc-600 inline-flex items-center gap-1.5">
+              Dezenas por jogo
+              <Help text="Tamanho de cada aposta (6 a 20). 6 = aposta simples. Mais dezenas cobrem mais números, mas encarecem muito a aposta." />
+            </span>
             <select
               value={dezenas}
               onChange={(e) => setDezenas(Number(e.target.value))}
@@ -249,7 +267,10 @@ function GeradorAvancado({ ranges }) {
               onChange={(e) => setAntiRateio(e.target.checked)}
               className="accent-emerald-600"
             />
-            <span>Anti-rateio</span>
+            <span className="inline-flex items-center gap-1.5">
+              Anti-rateio
+              <Help text="Descarta combinações muito populares (datas, sequências, desenhos). Não aumenta a chance de ganhar, mas se você ganhar, divide com menos gente." />
+            </span>
           </label>
         </div>
 
@@ -328,7 +349,10 @@ function Fechamento() {
 
         <div className="grid sm:grid-cols-2 gap-3 mt-3">
           <label className="text-sm">
-            <span className="text-zinc-600">Tipo</span>
+            <span className="text-zinc-600 inline-flex items-center gap-1.5">
+              Tipo
+              <Help text="Roda completa = TODAS as combinações possíveis das suas dezenas (garantia máxima, mas gera muitos jogos e custa caro). Reduzido = bem menos jogos, com uma garantia menor (quadra ou quina)." />
+            </span>
             <select
               value={tipo}
               onChange={(e) => setTipo(e.target.value)}
@@ -340,7 +364,10 @@ function Fechamento() {
           </label>
           {tipo === 'reduzida' && (
             <label className="text-sm">
-              <span className="text-zinc-600">Garantia</span>
+              <span className="text-zinc-600 inline-flex items-center gap-1.5">
+                Garantia
+                <Help text="O prêmio garantido SE as 6 dezenas sorteadas estiverem todas entre as que você escolheu. Atenção: não garante que você vá acertar a sena — garante cobertura das suas dezenas. Ex.: garantir quadra = se as 6 saírem entre as suas, um dos jogos com certeza terá pelo menos 4." />
+              </span>
               <select
                 value={garantia}
                 onChange={(e) => setGarantia(Number(e.target.value))}
@@ -442,7 +469,12 @@ function Termometro() {
   return (
     <div className="space-y-4">
       <Card
-        title="Termômetro de jogos"
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            Termômetro de jogos
+            <Help text="Cole um jogo (seu ou de qualquer fonte) e receba uma nota de 0 a 100 de quanto ele “se parece” com os sorteios típicos. IMPORTANTE: mede tipicidade/estética, NÃO chance de ganhar — um jogo nota 100 tem exatamente a mesma chance de um nota 10." />
+          </span>
+        }
         subtitle="Selecione um jogo (6 a 20 dezenas) e veja o quão dentro dos padrões históricos ele está. Mede tipicidade — não chance de ganhar."
       >
         <Volante selected={dezenas} onChange={setDezenas} max={20} />
@@ -538,8 +570,10 @@ export default function Fabrica() {
       <div>
         <h2 className="text-lg font-bold">Fábrica de números</h2>
         <p className="text-xs text-zinc-500">
-          As ferramentas mais avançadas — organizam padrões e montam jogos. Não alteram a chance de
-          acerto (todo jogo tem a mesma), mas são o melhor que a estatística oferece.
+          As ferramentas avançadas. Diferente da aba <strong>Gerar jogos</strong> (rápida, escolhe
+          uma estratégia e pronto), aqui você <strong>peneira por filtros</strong>, monta{' '}
+          <strong>fechamentos</strong> com garantia e <strong>avalia</strong> jogos prontos. Nenhuma
+          altera a chance de acerto — todo jogo tem a mesma.
         </p>
       </div>
       <div className="flex gap-1 flex-wrap">

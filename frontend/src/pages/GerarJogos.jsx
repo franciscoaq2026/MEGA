@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../lib/api.js'
 import { addBet } from '../lib/bets.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
+import Help from '../components/Help.jsx'
 import { formatMoney } from '../lib/format.js'
 
 const ESTRATEGIAS = [
@@ -11,21 +12,25 @@ const ESTRATEGIAS = [
     id: 'aleatorio',
     nome: 'Aleatório puro',
     desc: 'Sem viés nenhum — exatamente como a loteria funciona (baseline).',
+    help: 'Sorteia os números totalmente ao acaso, igual à Mega-Sena de verdade. É a opção mais honesta: nenhuma outra estratégia tem chance de acerto maior do que esta.',
   },
   {
     id: 'frequencia',
     nome: 'Frequência histórica',
     desc: 'Números mais sorteados no passado recebem mais peso.',
+    help: 'Dá preferência aos números que mais saíram no histórico (os “quentes”). Parece esperto, mas NÃO aumenta a chance — a bolinha não lembra do passado. Serve para quem gosta de apostar nos mais frequentes.',
   },
   {
     id: 'atrasados',
     nome: 'Atrasados',
     desc: 'Prioriza números que não saem há mais concursos.',
+    help: 'Dá preferência aos números que estão há mais tempo sem sair (a ideia de “já vai sair”). É a ilusão oposta à da frequência; também não muda a chance real.',
   },
   {
     id: 'balanceado',
     nome: 'Balanceado',
     desc: 'Mistura quentes e frios, equilibra pares/ímpares e mira a soma perto da média histórica (~183).',
+    help: 'Monta jogos parecidos com os sorteios típicos: mistura quentes e frios, equilibra pares/ímpares e mira a soma perto de 183. Dá cara de “jogo bem-feito”, mas não altera a probabilidade.',
   },
 ]
 
@@ -107,7 +112,13 @@ export default function GerarJogos() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold">Gerar jogos</h2>
+      <div>
+        <h2 className="text-lg font-bold">Gerar jogos</h2>
+        <p className="text-xs text-zinc-500">
+          O jeito rápido: escolha uma estratégia, diga quantos jogos e gere. Para peneirar por
+          soma, pares, primos etc. ou montar fechamentos, use a aba <strong>Fábrica</strong>.
+        </p>
+      </div>
 
       <div className="grid lg:grid-cols-3 gap-4 items-start">
         <Card title="Estratégia" className="lg:col-span-2">
@@ -129,7 +140,10 @@ export default function GerarJogos() {
                   onChange={() => setEstrategia(e.id)}
                   className="sr-only"
                 />
-                <p className="font-medium text-sm">{e.nome}</p>
+                <p className="font-medium text-sm flex items-center gap-1.5">
+                  {e.nome}
+                  <Help text={e.help} />
+                </p>
                 <p className="text-xs text-zinc-500 mt-0.5">{e.desc}</p>
               </label>
             ))}
@@ -137,7 +151,10 @@ export default function GerarJogos() {
 
           <div className="grid sm:grid-cols-3 gap-4 mt-4">
             <label className="text-sm">
-              <span className="text-zinc-600">Quantos jogos</span>
+              <span className="text-zinc-600 inline-flex items-center gap-1.5">
+                Quantos jogos
+                <Help text="Quantas apostas diferentes gerar de uma vez (1 a 20). Cada aposta é independente. Dobrar a quantidade dobra a sua chance total — é a única forma real de aumentar a chance." />
+              </span>
               <input
                 type="number"
                 min="1"
@@ -148,7 +165,10 @@ export default function GerarJogos() {
               />
             </label>
             <label className="text-sm">
-              <span className="text-zinc-600">Dezenas por jogo (6–20)</span>
+              <span className="text-zinc-600 inline-flex items-center gap-1.5">
+                Dezenas por jogo (6–20)
+                <Help text="Tamanho de cada aposta. 6 = aposta simples (mais barata). De 7 a 20 = aposta múltipla: cobre mais números e tem chance maior, mas o preço sobe MUITO (veja em Probabilidades reais)." />
+              </span>
               <select
                 value={dezenas}
                 onChange={(e) => setDezenas(Number(e.target.value))}
@@ -169,7 +189,10 @@ export default function GerarJogos() {
                 className="mt-0.5 accent-emerald-600"
               />
               <span>
-                <span className="text-zinc-800 font-medium">Anti-rateio</span>
+                <span className="text-zinc-800 font-medium inline-flex items-center gap-1.5">
+                  Anti-rateio
+                  <Help text="Descarta combinações que milhões de pessoas jogam (datas de aniversário, sequências, desenhos no volante, jogos que já foram sena). Não aumenta a chance de ganhar, mas se você ganhar, divide o prêmio com menos gente — efeito real no bolso." />
+                </span>
                 <span className="block text-xs text-zinc-500">
                   Evita combinações populares (só datas, sequências, desenhos). Não muda a chance
                   de ganhar — mas, se ganhar, divide com menos gente.
@@ -189,7 +212,12 @@ export default function GerarJogos() {
         </Card>
 
         <Card
-          title="Probabilidades reais"
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Probabilidades reais
+              <Help text="A chance exata de cada prêmio, calculada por matemática (não é estimativa nem 'tendência'). É idêntica para QUALQUER combinação de números — por isso nenhuma estratégia muda estes valores. Só aumentar as dezenas ou a quantidade de jogos muda a chance." />
+            </span>
+          }
           subtitle={`Jogo de ${dezenas} dezenas — matemática exata, igual para qualquer escolha de números`}
         >
           {odds ? (
@@ -293,7 +321,12 @@ export default function GerarJogos() {
       )}
 
       <Card
-        title="As estratégias funcionam? Backtest honesto"
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            As estratégias funcionam? Backtest honesto
+            <Help text="Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de 0,6 acerto/jogo. Rode e veja: todas empatam com o puro acaso." />
+          </span>
+        }
         subtitle="Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (0,6 acerto por jogo)"
       >
         {!backtest && (

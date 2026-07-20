@@ -47,6 +47,37 @@ SCHEMA = (
         value TEXT NOT NULL
     )
     """,
+    # Login sem senha (magic link). Cada token é de uso único e expira.
+    """
+    CREATE TABLE IF NOT EXISTS login_tokens (
+        token TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    # Sessões ativas. account_id agrupa vários e-mails na mesma conta.
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    )
+    """,
+    # Apostas do usuário, sincronizadas entre aparelhos (por conta).
+    """
+    CREATE TABLE IF NOT EXISTS bets (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        concurso INTEGER NOT NULL,
+        origem TEXT NOT NULL,
+        estrategia TEXT,
+        dezenas TEXT NOT NULL,
+        criado_em TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -193,3 +224,109 @@ def set_meta(key: str, value) -> None:
 def get_meta(key: str):
     rows = _query("SELECT value FROM meta WHERE key = ?", (key,))
     return json.loads(rows[0]["value"]) if rows else None
+
+
+# ---- Autenticação sem senha (magic link) ----
+
+
+def create_login_token(token: str, email: str, expires_at: str) -> None:
+    _write(
+        [
+            (
+                "INSERT INTO login_tokens (token, email, expires_at, used) VALUES (?, ?, ?, 0)",
+                (token, email, expires_at),
+            )
+        ]
+    )
+
+
+def get_login_token(token: str) -> dict | None:
+    rows = _query("SELECT * FROM login_tokens WHERE token = ?", (token,))
+    return rows[0] if rows else None
+
+
+def consume_login_token(token: str) -> None:
+    _write([("UPDATE login_tokens SET used = 1 WHERE token = ?", (token,))])
+
+
+def create_session(session_id: str, email: str, account_id: str, created_at: str, expires_at: str) -> None:
+    _write(
+        [
+            (
+                "INSERT INTO sessions (id, email, account_id, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, email, account_id, created_at, expires_at),
+            )
+        ]
+    )
+
+
+def get_session(session_id: str) -> dict | None:
+    rows = _query("SELECT * FROM sessions WHERE id = ?", (session_id,))
+    return rows[0] if rows else None
+
+
+def delete_session(session_id: str) -> None:
+    _write([("DELETE FROM sessions WHERE id = ?", (session_id,))])
+
+
+# ---- Apostas sincronizadas (por conta) ----
+
+
+def list_bets(account_id: str) -> list[dict]:
+    rows = _query(
+        "SELECT * FROM bets WHERE account_id = ? ORDER BY concurso DESC, criado_em DESC",
+        (account_id,),
+    )
+    for r in rows:
+        r["dezenas"] = json.loads(r["dezenas"])
+    return rows
+
+
+def upsert_bet(account_id: str, bet: dict) -> None:
+    _write(
+        [
+            (
+                "INSERT OR REPLACE INTO bets "
+                "(id, account_id, concurso, origem, estrategia, dezenas, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    bet["id"],
+                    account_id,
+                    int(bet["concurso"]),
+                    bet["origem"],
+                    bet.get("estrategia"),
+                    json.dumps(sorted(int(d) for d in bet["dezenas"])),
+                    bet.get("criado_em") or "",
+                ),
+            )
+        ]
+    )
+
+
+def upsert_bets(account_id: str, bets: list[dict]) -> int:
+    statements = []
+    for bet in bets:
+        statements.append(
+            (
+                "INSERT OR REPLACE INTO bets "
+                "(id, account_id, concurso, origem, estrategia, dezenas, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    bet["id"],
+                    account_id,
+                    int(bet["concurso"]),
+                    bet["origem"],
+                    bet.get("estrategia"),
+                    json.dumps(sorted(int(d) for d in bet["dezenas"])),
+                    bet.get("criado_em") or "",
+                ),
+            )
+        )
+    if statements:
+        _write(statements)
+    return len(statements)
+
+
+def delete_bet(account_id: str, bet_id: str) -> None:
+    _write([("DELETE FROM bets WHERE account_id = ? AND id = ?", (account_id, bet_id))])

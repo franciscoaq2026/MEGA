@@ -5,6 +5,8 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
+from .routers.auth import router as auth_router
+from .routers.bets import router as bets_router
 from .routers.draws import router as draws_router
 from .routers.games import router as games_router
 from .routers.stats import router as stats_router
@@ -31,6 +33,8 @@ api = APIRouter()
 api.include_router(draws_router)
 api.include_router(games_router)
 api.include_router(stats_router)
+api.include_router(auth_router)
+api.include_router(bets_router)
 
 
 @api.get("/health")

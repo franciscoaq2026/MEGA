@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
-import { addBet, exportBets, importBets, loadBets, removeBet } from '../lib/bets.js'
+import { addBet, exportBets, importBets, loadBets, removeBet, syncBets } from '../lib/bets.js'
+import { getSession, logout, requestLink } from '../lib/auth.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Volante from '../components/Volante.jsx'
@@ -68,9 +69,19 @@ export default function MeusJogos() {
   const [concurso, setConcurso] = useState('')
   const [dezenas, setDezenas] = useState([])
   const [message, setMessage] = useState(null)
+  const [session, setSession] = useState(getSession())
+  const [emailInput, setEmailInput] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
   const fileRef = useRef(null)
 
   const refresh = useCallback(async () => {
+    if (getSession()) {
+      try {
+        await syncBets() // traz jogos de outros aparelhos e migra os locais
+      } catch {
+        // sem rede/sessão expirada: segue com o que está no navegador
+      }
+    }
     const list = loadBets()
     setBets(list)
     if (list.length === 0) return
@@ -124,6 +135,35 @@ export default function MeusJogos() {
     } finally {
       if (fileRef.current) fileRef.current.value = ''
     }
+  }
+
+  async function enviarLink(e) {
+    e.preventDefault()
+    const email = emailInput.trim()
+    if (!email) return
+    setAuthBusy(true)
+    try {
+      const r = await requestLink(email)
+      if (r.status === 'ok') {
+        setMessage({
+          type: 'ok',
+          text: 'Se este e-mail tiver acesso, você receberá um link para entrar. Verifique a caixa de entrada e o spam.',
+        })
+        setEmailInput('')
+      } else {
+        setMessage({ type: 'error', text: r.message || 'Não foi possível enviar o link.' })
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Falha de rede ao pedir o link.' })
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function sair() {
+    await logout()
+    setSession(null)
+    setMessage({ type: 'ok', text: 'Você saiu. Os jogos continuam salvos neste navegador.' })
   }
 
   const grupos = useMemo(() => {
@@ -195,9 +235,59 @@ export default function MeusJogos() {
         </div>
       </div>
 
+      <Card
+        title="Sincronizar entre aparelhos"
+        subtitle={
+          session
+            ? 'Seus jogos são salvos na sua conta e aparecem em qualquer aparelho.'
+            : 'Entre com seu e-mail para ver os mesmos jogos no celular e no computador.'
+        }
+      >
+        {session ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-zinc-600">
+              Conectado como <strong>{session.email}</strong>. Os jogos sincronizam
+              automaticamente.
+            </p>
+            <button
+              onClick={sair}
+              className="px-3 py-1.5 rounded-lg border border-zinc-300 bg-white text-xs font-medium hover:bg-zinc-50"
+            >
+              Sair
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={enviarLink} className="space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="email"
+                required
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="seu@email.com"
+                className="flex-1 border border-zinc-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={authBusy || !emailInput.trim()}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {authBusy ? 'Enviando…' : 'Enviar link de acesso'}
+              </button>
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              Você recebe um link no e-mail e entra sem senha. Ao entrar, os jogos que já estão
+              neste navegador são enviados para a sua conta (nada é perdido).
+            </p>
+          </form>
+        )}
+      </Card>
+
       <p className="text-xs text-zinc-500">
-        Os jogos ficam salvos <strong>neste navegador</strong>. Use o backup para levar para outro
-        aparelho. O “jogo do app” é salvo pela tela{' '}
+        {session
+          ? 'Os jogos ficam na sua conta (nuvem) e também neste navegador. '
+          : 'Os jogos ficam salvos neste navegador. Use o backup ou o login acima para levar para outro aparelho. '}
+        O “jogo do app” é salvo pela tela{' '}
         <Link to="/gerar" className="text-emerald-700 underline">
           Gerar jogos
         </Link>

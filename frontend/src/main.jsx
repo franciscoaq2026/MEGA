@@ -5,11 +5,18 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
+import { consumeLoginTokenFromUrl } from './lib/auth.js'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <HashRouter>
-      <App />
-    </HashRouter>
-  </StrictMode>,
-)
+function render() {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <HashRouter>
+        <App />
+      </HashRouter>
+    </StrictMode>,
+  )
+}
+
+// Se o usuário chegou pelo link de acesso do e-mail (?login_token=...),
+// conclui o login antes de montar o app para a sessão já valer na 1ª tela.
+consumeLoginTokenFromUrl().finally(render)

@@ -1,23 +1,27 @@
-// Apostas ficam no navegador (localStorage): funcionam offline e sem login.
-// Quando o usuário está logado (magic link), são também sincronizadas com a
-// nuvem (Turso) para aparecer em qualquer aparelho. A migração dos jogos que
-// já estavam no navegador acontece no primeiro sync (nada é perdido).
+// Apostas ficam no navegador (localStorage), separadas por loteria: funcionam
+// offline e sem login. Quando o usuário está logado (magic link), são também
+// sincronizadas com a nuvem (Turso) para aparecer em qualquer aparelho. A
+// migração dos jogos que já estavam no navegador acontece no primeiro sync.
 
 import { authHeaders, getSession } from './auth.js'
 
-const KEY = 'megasena.bets.v1'
+// Chave por loteria. A Mega mantém a chave histórica para não perder dados
+// de quem já usava o app antes do hub.
+function keyFor(loteria = 'mega') {
+  return loteria === 'mega' ? 'megasena.bets.v1' : `loterias.bets.${loteria}.v1`
+}
 
-export function loadBets() {
+export function loadBets(loteria = 'mega') {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY))
+    const raw = JSON.parse(localStorage.getItem(keyFor(loteria)))
     return Array.isArray(raw) ? raw : []
   } catch {
     return []
   }
 }
 
-export function saveBets(bets) {
-  localStorage.setItem(KEY, JSON.stringify(bets))
+export function saveBets(loteria, bets) {
+  localStorage.setItem(keyFor(loteria), JSON.stringify(bets))
 }
 
 // ── Sincronização com a nuvem (fire-and-forget: nunca trava a interface) ──────
@@ -44,13 +48,11 @@ async function cloudDelete(id) {
   }
 }
 
-// Envia as apostas locais e recebe a lista completa da conta (união por id no
-// servidor). Espelha o resultado no localStorage. É o que traz os jogos de
-// outros aparelhos e migra os jogos locais no primeiro login.
-export async function syncBets() {
-  if (!getSession()) return loadBets()
-  const local = loadBets()
-  const res = await fetch('/api/bets/sync', {
+// Envia as apostas locais desta loteria e recebe a lista da conta para ela.
+export async function syncBets(loteria = 'mega') {
+  if (!getSession()) return loadBets(loteria)
+  const local = loadBets(loteria)
+  const res = await fetch(`/api/bets/sync?loteria=${encodeURIComponent(loteria)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ bets: local }),
@@ -58,16 +60,17 @@ export async function syncBets() {
   if (!res.ok) throw new Error(`sync falhou (${res.status})`)
   const data = await res.json()
   const cloud = Array.isArray(data.bets) ? data.bets : []
-  saveBets(cloud)
+  saveBets(loteria, cloud)
   return cloud
 }
 
-// ── API local (síncrona, como antes) + espelho na nuvem ───────────────────────
+// ── API local (síncrona) + espelho na nuvem ───────────────────────────────────
 
-export function addBet({ concurso, origem, estrategia = null, dezenas }) {
-  const bets = loadBets()
+export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, dezenas }) {
+  const bets = loadBets(loteria)
   const bet = {
     id: crypto.randomUUID(),
+    loteria,
     concurso: Number(concurso),
     origem, // 'manual' | 'app'
     estrategia,
@@ -75,27 +78,27 @@ export function addBet({ concurso, origem, estrategia = null, dezenas }) {
     criado_em: new Date().toISOString(),
   }
   bets.push(bet)
-  saveBets(bets)
+  saveBets(loteria, bets)
   cloudPost(bet)
   return bet
 }
 
-export function removeBet(id) {
-  saveBets(loadBets().filter((b) => b.id !== id))
+export function removeBet(loteria, id) {
+  saveBets(loteria, loadBets(loteria).filter((b) => b.id !== id))
   cloudDelete(id)
 }
 
-export function exportBets() {
-  const blob = new Blob([JSON.stringify(loadBets(), null, 2)], { type: 'application/json' })
+export function exportBets(loteria = 'mega') {
+  const blob = new Blob([JSON.stringify(loadBets(loteria), null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `megasena-jogos-${new Date().toISOString().slice(0, 10)}.json`
+  a.download = `${loteria}-jogos-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
 }
 
-export async function importBets(file) {
+export async function importBets(file, loteria = 'mega') {
   const text = await file.text()
   const data = JSON.parse(text)
   if (!Array.isArray(data)) throw new Error('arquivo inválido: esperado um array de jogos')
@@ -107,14 +110,13 @@ export async function importBets(file) {
       Array.isArray(b.dezenas) &&
       b.dezenas.length >= 6,
   )
-  const existing = loadBets()
+  const existing = loadBets(loteria)
   const ids = new Set(existing.map((b) => b.id))
-  const merged = [...existing, ...valid.filter((b) => !ids.has(b.id))]
-  saveBets(merged)
-  // Logado: sobe os importados para a nuvem (e reespelha a lista final).
+  const merged = [...existing, ...valid.filter((b) => !ids.has(b.id)).map((b) => ({ ...b, loteria }))]
+  saveBets(loteria, merged)
   if (getSession()) {
     try {
-      await syncBets()
+      await syncBets(loteria)
     } catch {
       // mantém o merge local mesmo se o sync falhar
     }

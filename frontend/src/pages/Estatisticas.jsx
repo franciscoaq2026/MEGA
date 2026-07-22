@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useLottery } from '../lib/LotteryContext.jsx'
 import {
   Bar,
   BarChart,
@@ -172,6 +173,7 @@ function XRay({ defaultConcurso }) {
 }
 
 export default function Estatisticas() {
+  const { code } = useLottery()
   const [empty, setEmpty] = useState(false)
   const [error, setError] = useState(null)
   const [windowSize, setWindowSize] = useState(0)
@@ -219,7 +221,7 @@ export default function Estatisticas() {
         <h2 className="text-lg font-bold mb-1">Estatísticas</h2>
         <p className="text-sm text-zinc-500">
           O cache de sorteios está vazio. Vá em{' '}
-          <Link to="/sorteios" className="text-emerald-700 font-medium underline">
+          <Link to={`/${code}/sorteios`} className="text-emerald-700 font-medium underline">
             Sorteios
           </Link>{' '}
           e sincronize (ou importe um CSV) para liberar as análises.

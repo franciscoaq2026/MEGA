@@ -6,6 +6,7 @@ import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Help from '../components/Help.jsx'
 import { formatMoney } from '../lib/format.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 
 const ESTRATEGIAS = [
   {
@@ -37,6 +38,7 @@ const ESTRATEGIAS = [
 const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
 
 export default function GerarJogos() {
+  const { code } = useLottery()
   const [estrategia, setEstrategia] = useState('aleatorio')
   const [qtdJogos, setQtdJogos] = useState(3)
   const [dezenas, setDezenas] = useState(6)
@@ -71,6 +73,7 @@ export default function GerarJogos() {
   function salvar(i, jogo) {
     if (!concursoSalvar) return
     addBet({
+      loteria: code,
       concurso: concursoSalvar,
       origem: 'app',
       estrategia: result.estrategia,
@@ -300,7 +303,7 @@ export default function GerarJogos() {
                   {salvos[i] ? (
                     <span className="text-xs text-emerald-700 font-medium">
                       ✓ salvo no concurso {salvos[i]} —{' '}
-                      <Link to="/meus-jogos" className="underline">
+                      <Link to={`/${code}/meus-jogos`} className="underline">
                         ver em Meus jogos
                       </Link>
                     </span>

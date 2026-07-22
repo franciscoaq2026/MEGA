@@ -216,6 +216,20 @@ def test_stats_avancadas_lotomania_generalizadas():
         assert pr.status_code == 200 and "pairs" in pr.json()
 
 
+def test_proximo_nao_fica_defasado():
+    with make_client() as c:
+        cc = 998500
+        db.upsert_draws(
+            [{"concurso": cc, "data": "2026-05-01", "dezenas": list(range(0, 20))}], "loto"
+        )
+        # meta "próximo" defasada (anterior ao último já no cache)
+        db.set_meta("proximo:loto", {"concurso": cc - 100, "data": "2026-01-01", "estimativa": 1, "acumulado": True})
+        st = c.get("/api/status?loteria=loto").json()
+        # status deve derivar do último local (+1), não repetir o valor defasado
+        assert st["proximo"]["concurso"] == cc + 1
+        assert st["proximo"]["data"] is None
+
+
 def test_validacao_dezenas_por_loteria():
     with make_client() as c:
         sid = _login(c)

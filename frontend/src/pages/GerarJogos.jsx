@@ -125,10 +125,20 @@ export default function GerarJogos() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-bold">Gerar jogos</h2>
-        <p className="text-xs text-zinc-500">
-          O jeito rápido: escolha uma estratégia, diga quantos jogos e gere. Para peneirar por
-          soma, pares, primos etc. ou montar fechamentos, use a aba <strong>Fábrica</strong>.
-        </p>
+        {cfg.avancada ? (
+          <p className="text-xs text-zinc-500">
+            O jeito rápido: escolha uma estratégia, diga quantos jogos e gere. Para peneirar por
+            soma, pares, primos etc. ou montar fechamentos, use a aba <strong>Fábrica</strong>.
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-500">
+            Na {cfg.nome} você marca {cfg.escolher} de {cfg.total} dezenas. As estratégias abaixo
+            só mudam a <em>aparência</em> do jogo — nenhuma altera a probabilidade de acerto (o
+            sorteio é aleatório). O que realmente aumenta a chance de ganhar <em>algum</em> prêmio
+            é a <strong>aposta espelho</strong> (abaixo) e jogar mais bilhetes. Por isso a{' '}
+            {cfg.nome} não tem “Fábrica” de filtros: eles seriam enfeite, sem efeito real.
+          </p>
+        )}
       </div>
 
       <div className={`grid gap-4 items-start ${cfg.avancada ? 'lg:grid-cols-3' : ''}`}>

@@ -19,6 +19,7 @@ GUIDI_API = "https://api.guidi.dev.br/loteria"
 # Só a Mega tem esse espelho; para as demais loterias, só Caixa/guidi.
 MAICKON_BASES = {
     "megasena": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena",
+    "lotomania": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/lotomania",
 }
 
 HEADERS = {

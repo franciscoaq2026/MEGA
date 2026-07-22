@@ -20,7 +20,13 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Histórico embutido no repositório (dezenas de todos os concursos + datas
 # onde disponíveis). Serve de fonte para o /sync quando as APIs da Caixa/guidi
 # estão inacessíveis — o caso do Vercel, cujo IP de datacenter é bloqueado.
-SEED_JSON = DATA_DIR / "seed_megasena.json"
+SEED_JSON = DATA_DIR / "seed_megasena.json"  # mantido por compatibilidade
+# Seed por loteria (histórico embutido). A Mega tem o histórico completo;
+# a Lotomania começa vazia e é populada pelo sync do navegador do usuário.
+SEED_FILES = {
+    "mega": DATA_DIR / "seed_megasena.json",
+    "loto": DATA_DIR / "seed_lotomania.json",
+}
 
 TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
 TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
@@ -29,6 +35,8 @@ USE_TURSO = bool(TURSO_URL)
 DB_PATH = os.environ.get("MEGASENA_DB_PATH") or str(DATA_DIR / "megasena.db")
 
 SCHEMA = (
+    # Tabela legada da Mega (6 colunas). Mantida só como fonte de migração
+    # para a tabela genérica lottery_draws; novas escritas vão para a genérica.
     """
     CREATE TABLE IF NOT EXISTS draws (
         concurso INTEGER PRIMARY KEY,
@@ -39,6 +47,17 @@ SCHEMA = (
         d4 INTEGER NOT NULL,
         d5 INTEGER NOT NULL,
         d6 INTEGER NOT NULL
+    )
+    """,
+    # Sorteios de qualquer loteria: dezenas guardadas como JSON (a Lotomania
+    # tem 20 números; a Mega, 6). Chave composta (loteria, concurso).
+    """
+    CREATE TABLE IF NOT EXISTS lottery_draws (
+        loteria TEXT NOT NULL,
+        concurso INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        dezenas TEXT NOT NULL,
+        PRIMARY KEY (loteria, concurso)
     )
     """,
     """
@@ -66,11 +85,12 @@ SCHEMA = (
         expires_at TEXT NOT NULL
     )
     """,
-    # Apostas do usuário, sincronizadas entre aparelhos (por conta).
+    # Apostas do usuário, sincronizadas entre aparelhos (por conta e loteria).
     """
     CREATE TABLE IF NOT EXISTS bets (
         id TEXT PRIMARY KEY,
         account_id TEXT NOT NULL,
+        loteria TEXT NOT NULL DEFAULT 'mega',
         concurso INTEGER NOT NULL,
         origem TEXT NOT NULL,
         estrategia TEXT,
@@ -122,11 +142,12 @@ def _write(statements: list[tuple[str, tuple]]) -> None:
         conn.close()
 
 
-def load_bundled_seed() -> list[dict]:
-    """Lê o histórico embutido (backend/data/seed_megasena.json)."""
-    if not SEED_JSON.exists():
+def load_bundled_seed(loteria: str = "mega") -> list[dict]:
+    """Lê o histórico embutido da loteria (backend/data/seed_<loteria>.json)."""
+    path = SEED_FILES.get(loteria)
+    if not path or not path.exists():
         return []
-    data = json.loads(SEED_JSON.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     return [
         {
             "concurso": int(r["concurso"]),
@@ -137,77 +158,138 @@ def load_bundled_seed() -> list[dict]:
     ]
 
 
+def _migrate_legacy_draws() -> None:
+    """Copia a tabela antiga `draws` (Mega, 6 colunas) para a genérica
+    lottery_draws sob a loteria 'mega', uma única vez. Idempotente: só roda
+    se a genérica ainda não tiver dados de Mega e a antiga tiver linhas."""
+    ja_tem = _query("SELECT COUNT(*) AS n FROM lottery_draws WHERE loteria = 'mega'")[0]["n"]
+    if ja_tem:
+        return
+    try:
+        antigos = _query("SELECT * FROM draws")
+    except Exception:  # noqa: BLE001 - tabela antiga pode não existir
+        return
+    if not antigos:
+        return
+    rows = [
+        {
+            "concurso": r["concurso"],
+            "data": r["data"],
+            "dezenas": [r[f"d{i}"] for i in range(1, 7)],
+        }
+        for r in antigos
+    ]
+    upsert_draws(rows, "mega")
+
+
+def _ensure_bets_loteria_column() -> None:
+    """Adiciona a coluna bets.loteria se a tabela já existia sem ela
+    (bancos criados antes do suporte multi-loteria). Idempotente."""
+    try:
+        cols = {r["name"] for r in _query("PRAGMA table_info(bets)")}
+    except Exception:  # noqa: BLE001
+        return
+    if cols and "loteria" not in cols:
+        try:
+            _write([("ALTER TABLE bets ADD COLUMN loteria TEXT NOT NULL DEFAULT 'mega'", ())])
+        except Exception as exc:  # noqa: BLE001 - não derruba o init
+            print(f"[init_db] aviso ao migrar bets.loteria: {exc}")
+
+
 def init_db() -> None:
     _write([(stmt, ()) for stmt in SCHEMA])
+    _migrate_legacy_draws()
+    _ensure_bets_loteria_column()
     # Auto-carrega o seed apenas no SQLite local (desenvolvimento). No Turso o
     # carregamento é feito em lotes pelo endpoint /sync, para não estourar o
     # tempo limite da função no primeiro cold start. Desligável nos testes.
     autoseed = os.environ.get("MEGASENA_AUTOSEED", "1") == "1"
-    if autoseed and not USE_TURSO and count_draws() == 0:
-        seed = load_bundled_seed()
-        if seed:
-            upsert_draws(seed)
+    if autoseed and not USE_TURSO:
+        for loteria in ("mega", "loto"):
+            if count_draws(loteria) == 0:
+                seed = load_bundled_seed(loteria)
+                if seed:
+                    upsert_draws(seed, loteria)
 
 
-def row_to_draw(row: dict) -> dict:
-    return {
-        "concurso": row["concurso"],
-        "data": row["data"],
-        "dezenas": [row[f"d{i}"] for i in range(1, 7)],
-    }
-
-
-def upsert_draws(rows: list[dict]) -> int:
+def upsert_draws(rows: list[dict], loteria: str = "mega") -> int:
     sql = (
-        "INSERT OR REPLACE INTO draws (concurso, data, d1, d2, d3, d4, d5, d6) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR REPLACE INTO lottery_draws (loteria, concurso, data, dezenas) "
+        "VALUES (?, ?, ?, ?)"
     )
     statements = []
     for r in rows:
-        dz = sorted(r["dezenas"])
-        statements.append((sql, (r["concurso"], r["data"], *dz)))
-    _write(statements)
+        dz = sorted(int(d) for d in r["dezenas"])
+        statements.append((sql, (loteria, r["concurso"], r["data"], json.dumps(dz))))
+    if statements:
+        _write(statements)
     return len(rows)
 
 
-def count_draws() -> int:
-    return _query("SELECT COUNT(*) AS n FROM draws")[0]["n"]
+def _row_to_draw(row: dict) -> dict:
+    return {
+        "concurso": row["concurso"],
+        "data": row["data"],
+        "dezenas": json.loads(row["dezenas"]),
+    }
 
 
-def all_concursos() -> set[int]:
-    return {r["concurso"] for r in _query("SELECT concurso FROM draws")}
+def count_draws(loteria: str = "mega") -> int:
+    return _query(
+        "SELECT COUNT(*) AS n FROM lottery_draws WHERE loteria = ?", (loteria,)
+    )[0]["n"]
 
 
-def concursos_com_data() -> set[int]:
+def all_concursos(loteria: str = "mega") -> set[int]:
+    return {
+        r["concurso"]
+        for r in _query("SELECT concurso FROM lottery_draws WHERE loteria = ?", (loteria,))
+    }
+
+
+def concursos_com_data(loteria: str = "mega") -> set[int]:
     """Concursos já salvos E com data preenchida. O sync usa isto para também
     completar a data de sorteios que entraram antes sem data."""
     return {
         r["concurso"]
-        for r in _query("SELECT concurso FROM draws WHERE data != '' AND data IS NOT NULL")
+        for r in _query(
+            "SELECT concurso FROM lottery_draws WHERE loteria = ? "
+            "AND data != '' AND data IS NOT NULL",
+            (loteria,),
+        )
     }
 
 
-def latest_local() -> dict | None:
-    rows = _query("SELECT * FROM draws ORDER BY concurso DESC LIMIT 1")
-    return row_to_draw(rows[0]) if rows else None
-
-
-def get_draw(concurso: int) -> dict | None:
-    rows = _query("SELECT * FROM draws WHERE concurso = ?", (concurso,))
-    return row_to_draw(rows[0]) if rows else None
-
-
-def list_draws(limit: int, offset: int) -> list[dict]:
+def latest_local(loteria: str = "mega") -> dict | None:
     rows = _query(
-        "SELECT * FROM draws ORDER BY concurso DESC LIMIT ? OFFSET ?",
-        (limit, offset),
+        "SELECT * FROM lottery_draws WHERE loteria = ? ORDER BY concurso DESC LIMIT 1",
+        (loteria,),
     )
-    return [row_to_draw(r) for r in rows]
+    return _row_to_draw(rows[0]) if rows else None
 
 
-def get_all_draws_asc() -> list[dict]:
-    rows = _query("SELECT * FROM draws ORDER BY concurso ASC")
-    return [row_to_draw(r) for r in rows]
+def get_draw(concurso: int, loteria: str = "mega") -> dict | None:
+    rows = _query(
+        "SELECT * FROM lottery_draws WHERE loteria = ? AND concurso = ?",
+        (loteria, concurso),
+    )
+    return _row_to_draw(rows[0]) if rows else None
+
+
+def list_draws(limit: int, offset: int, loteria: str = "mega") -> list[dict]:
+    rows = _query(
+        "SELECT * FROM lottery_draws WHERE loteria = ? ORDER BY concurso DESC LIMIT ? OFFSET ?",
+        (loteria, limit, offset),
+    )
+    return [_row_to_draw(r) for r in rows]
+
+
+def get_all_draws_asc(loteria: str = "mega") -> list[dict]:
+    rows = _query(
+        "SELECT * FROM lottery_draws WHERE loteria = ? ORDER BY concurso ASC",
+        (loteria,),
+    )
+    return [_row_to_draw(r) for r in rows]
 
 
 def set_meta(key: str, value) -> None:
@@ -270,59 +352,54 @@ def delete_session(session_id: str) -> None:
     _write([("DELETE FROM sessions WHERE id = ?", (session_id,))])
 
 
-# ---- Apostas sincronizadas (por conta) ----
+# ---- Apostas sincronizadas (por conta e loteria) ----
+
+_BET_INSERT = (
+    "INSERT OR REPLACE INTO bets "
+    "(id, account_id, loteria, concurso, origem, estrategia, dezenas, criado_em) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
 
 
-def list_bets(account_id: str) -> list[dict]:
-    rows = _query(
-        "SELECT * FROM bets WHERE account_id = ? ORDER BY concurso DESC, criado_em DESC",
-        (account_id,),
+def _bet_params(account_id: str, bet: dict) -> tuple:
+    return (
+        bet["id"],
+        account_id,
+        (bet.get("loteria") or "mega"),
+        int(bet["concurso"]),
+        bet["origem"],
+        bet.get("estrategia"),
+        json.dumps(sorted(int(d) for d in bet["dezenas"])),
+        bet.get("criado_em") or "",
     )
+
+
+def list_bets(account_id: str, loteria: str | None = None) -> list[dict]:
+    """Lista apostas da conta. Se `loteria` for dado, filtra por ela;
+    caso contrário retorna todas (de todas as loterias)."""
+    if loteria:
+        rows = _query(
+            "SELECT * FROM bets WHERE account_id = ? AND loteria = ? "
+            "ORDER BY concurso DESC, criado_em DESC",
+            (account_id, loteria),
+        )
+    else:
+        rows = _query(
+            "SELECT * FROM bets WHERE account_id = ? ORDER BY concurso DESC, criado_em DESC",
+            (account_id,),
+        )
     for r in rows:
         r["dezenas"] = json.loads(r["dezenas"])
+        r.setdefault("loteria", "mega")
     return rows
 
 
 def upsert_bet(account_id: str, bet: dict) -> None:
-    _write(
-        [
-            (
-                "INSERT OR REPLACE INTO bets "
-                "(id, account_id, concurso, origem, estrategia, dezenas, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    bet["id"],
-                    account_id,
-                    int(bet["concurso"]),
-                    bet["origem"],
-                    bet.get("estrategia"),
-                    json.dumps(sorted(int(d) for d in bet["dezenas"])),
-                    bet.get("criado_em") or "",
-                ),
-            )
-        ]
-    )
+    _write([(_BET_INSERT, _bet_params(account_id, bet))])
 
 
 def upsert_bets(account_id: str, bets: list[dict]) -> int:
-    statements = []
-    for bet in bets:
-        statements.append(
-            (
-                "INSERT OR REPLACE INTO bets "
-                "(id, account_id, concurso, origem, estrategia, dezenas, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    bet["id"],
-                    account_id,
-                    int(bet["concurso"]),
-                    bet["origem"],
-                    bet.get("estrategia"),
-                    json.dumps(sorted(int(d) for d in bet["dezenas"])),
-                    bet.get("criado_em") or "",
-                ),
-            )
-        )
+    statements = [(_BET_INSERT, _bet_params(account_id, bet)) for bet in bets]
     if statements:
         _write(statements)
     return len(statements)

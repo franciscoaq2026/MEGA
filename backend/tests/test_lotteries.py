@@ -113,6 +113,37 @@ def test_generate_lotomania():
             assert all(0 <= n <= 99 for n in j["dezenas"])
 
 
+def test_aposta_espelho_lotomania():
+    with make_client() as c:
+        r = c.post(
+            "/api/generate?loteria=loto",
+            json={"estrategia": "aleatorio", "jogos": 1, "dezenas": 50, "espelho": True},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["espelho"] is True
+        jogos = body["jogos"]
+        assert len(jogos) == 2  # base + espelho
+        base = next(j for j in jogos if not j["espelho"])
+        esp = next(j for j in jogos if j["espelho"])
+        # complementares: disjuntos e juntos cobrem todos os 100 números
+        assert set(base["dezenas"]).isdisjoint(esp["dezenas"])
+        assert set(base["dezenas"]) | set(esp["dezenas"]) == set(range(0, 100))
+        assert len(base["dezenas"]) == 50 and len(esp["dezenas"]) == 50
+
+
+def test_espelho_ignorado_na_mega():
+    with make_client() as c:
+        # Mega: aposta não cobre metade do volante -> espelho não se aplica
+        r = c.post(
+            "/api/generate?loteria=mega",
+            json={"estrategia": "aleatorio", "jogos": 2, "dezenas": 6, "espelho": True},
+        )
+        assert r.status_code == 200
+        assert r.json()["espelho"] is False
+        assert len(r.json()["jogos"]) == 2  # sem espelhos acrescentados
+
+
 def test_check_lotomania_zero_acertos_premia():
     with make_client() as c:
         # sorteio da Lotomania: 20 dezenas de 00 a 19

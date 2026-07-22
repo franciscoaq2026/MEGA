@@ -1,9 +1,7 @@
-import { useEffect } from 'react'
 import { NavLink, Outlet, useParams, Navigate } from 'react-router-dom'
 import Disclaimer from './Disclaimer.jsx'
 import { isValidLoteria } from '../lib/lotteries.js'
 import { LotteryProvider, useLottery } from '../lib/LotteryContext.jsx'
-import { setApiLoteria } from '../lib/api.js'
 
 const PAGES = [
   { sub: '', label: 'Início', end: true },
@@ -16,12 +14,6 @@ const PAGES = [
 
 function Shell() {
   const { cfg, basePath } = useLottery()
-
-  // Toda chamada de API passa a carregar esta loteria.
-  useEffect(() => {
-    setApiLoteria(cfg.code)
-  }, [cfg.code])
-
   const links = PAGES.filter((p) => !p.onlyAvancada || cfg.avancada)
 
   return (

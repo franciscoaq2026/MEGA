@@ -1,62 +1,79 @@
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import db, lotteries
 from ..csv_utils import parse_draws_csv
 from ..fetcher import FetchError, fetch_latest, fetch_many, parse_payload
 
 router = APIRouter(tags=["sorteios"])
 
 
+def _loteria(code: str | None) -> str:
+    return lotteries.get_loteria(code)["code"]
+
+
+def _prox_key(loteria: str) -> str:
+    # Mantém a chave histórica da Mega; demais loterias são namespaced.
+    return "proximo" if loteria == "mega" else f"proximo:{loteria}"
+
+
 @router.get("/status")
-def status():
+def status(loteria: str | None = Query(default=None)):
+    lot = _loteria(loteria)
     return {
-        "total_draws": db.count_draws(),
-        "ultimo_local": db.latest_local(),
-        "proximo": db.get_meta("proximo"),
+        "loteria": lot,
+        "total_draws": db.count_draws(lot),
+        "ultimo_local": db.latest_local(lot),
+        "proximo": db.get_meta(_prox_key(lot)),
         "db_backend": db.backend_name(),
     }
 
 
 @router.get("/draws")
-def draws(limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0)):
+def draws(
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    loteria: str | None = Query(default=None),
+):
+    lot = _loteria(loteria)
     return {
-        "total": db.count_draws(),
-        "items": db.list_draws(limit, offset),
+        "total": db.count_draws(lot),
+        "items": db.list_draws(limit, offset, lot),
     }
 
 
 @router.get("/draws/{concurso}")
-def draw(concurso: int):
-    found = db.get_draw(concurso)
+def draw(concurso: int, loteria: str | None = Query(default=None)):
+    lot = _loteria(loteria)
+    found = db.get_draw(concurso, lot)
     if not found:
         raise HTTPException(404, f"concurso {concurso} não está no cache local")
     return found
 
 
-def _sync_from_seed(max_batch: int) -> dict:
+def _sync_from_seed(lot: str, max_batch: int) -> dict:
     """Fallback: carrega o histórico embutido no repositório, em lotes.
 
     Usado quando as APIs da Caixa/guidi não respondem (ex.: no Vercel, cujo
     IP de datacenter é bloqueado por elas). Os dados já vêm no deploy, então
     aqui é só cópia local do arquivo -> banco, sem rede externa.
     """
-    seed = db.load_bundled_seed()
+    seed = db.load_bundled_seed(lot)
     if not seed:
         raise HTTPException(
             502,
             "APIs de resultados indisponíveis e nenhum histórico embutido encontrado. "
-            "Use a importação de CSV.",
+            "Sincronize pelo navegador (IP residencial) ou importe um CSV.",
         )
-    existing = db.concursos_com_data()
+    existing = db.concursos_com_data(lot)
     missing = [s for s in seed if s["concurso"] not in existing]
     batch = missing[:max_batch]
     if batch:
-        db.upsert_draws(batch)
+        db.upsert_draws(batch, lot)
 
     last = max(s["concurso"] for s in seed)
     db.set_meta(
-        "proximo",
+        _prox_key(lot),
         {"concurso": last + 1, "data": None, "estimativa": None, "acumulado": None},
     )
     return {
@@ -64,52 +81,56 @@ def _sync_from_seed(max_batch: int) -> dict:
         "latest_remote": last,
         "added": len(batch),
         "errors": [],
-        "total_local": db.count_draws(),
+        "total_local": db.count_draws(lot),
         "remaining": len(missing) - len(batch),
-        "proximo": db.get_meta("proximo"),
+        "proximo": db.get_meta(_prox_key(lot)),
     }
 
 
 @router.post("/sync")
-async def sync(max_batch: int = Query(200, ge=1, le=1000)):
+async def sync(
+    max_batch: int = Query(200, ge=1, le=1000),
+    loteria: str | None = Query(default=None),
+):
     """Sincronização incremental: busca só o que falta, em lotes.
 
     Tenta a API da Caixa (com fallback guidi) — que funciona a partir de um IP
     residencial. Se ambas falharem (caso do Vercel), cai para o histórico
     embutido no repositório. O frontend chama repetidamente até remaining == 0.
     """
+    lot = _loteria(loteria)
     try:
-        latest = await fetch_latest()
+        latest = await fetch_latest(lot)
     except FetchError:
-        return _sync_from_seed(max_batch)
+        return _sync_from_seed(lot, max_batch)
 
-    db.set_meta("proximo", latest["proximo"])
+    db.set_meta(_prox_key(lot), latest["proximo"])
     latest_num = latest["concurso"]
 
     # Precisa buscar: concursos ausentes OU salvos sem data.
-    dated = db.concursos_com_data()
+    dated = db.concursos_com_data(lot)
     need = [n for n in range(1, latest_num + 1) if n not in dated]
     batch_nums = need[:max_batch]
 
     # Resolve cada concurso: primeiro do histórico embutido (instantâneo, sem
-    # rede), e só o que for mais novo que o seed vem da rede (maickon).
-    seed = {s["concurso"]: s for s in db.load_bundled_seed()}
+    # rede), e só o que for mais novo que o seed vem da rede.
+    seed = {s["concurso"]: s for s in db.load_bundled_seed(lot)}
     from_seed = [seed[n] for n in batch_nums if n in seed]
     to_fetch = [n for n in batch_nums if n not in seed]
 
     fetched, errors = ([], [])
     if to_fetch:
-        fetched, errors = await fetch_many(to_fetch)
+        fetched, errors = await fetch_many(to_fetch, lot)
     rows = from_seed + fetched
     if rows:
-        db.upsert_draws(rows)
+        db.upsert_draws(rows, lot)
 
     return {
         "source": "api+seed",
         "latest_remote": latest_num,
         "added": len(rows),
         "errors": errors[:5],
-        "total_local": db.count_draws(),
+        "total_local": db.count_draws(lot),
         "remaining": len(need) - len(batch_nums),
         "proximo": latest["proximo"],
     }
@@ -120,7 +141,7 @@ class PayloadsImport(BaseModel):
 
 
 @router.post("/import-payloads")
-def import_payloads(req: PayloadsImport):
+def import_payloads(req: PayloadsImport, loteria: str | None = Query(default=None)):
     """Recebe payloads brutos (formato Caixa/guidi) buscados PELO NAVEGADOR
     do usuário e grava no banco.
 
@@ -129,33 +150,35 @@ def import_payloads(req: PayloadsImport):
     direto no navegador e repassa para cá — o servidor valida com o mesmo
     parser das fontes oficiais antes de gravar.
     """
+    lot = _loteria(loteria)
     rows: list[dict] = []
     errors: list[str] = []
     for p in req.payloads:
         try:
-            rows.append(parse_payload(p))
+            rows.append(parse_payload(p, lot))
         except Exception as e:  # noqa: BLE001 - payload inválido é só pulado
             errors.append(str(e))
     if not rows:
         raise HTTPException(400, f"nenhum payload válido ({errors[:3]})")
 
-    db.upsert_draws(rows)
+    db.upsert_draws(rows, lot)
     newest = max(rows, key=lambda r: r["concurso"])
-    ultimo = db.latest_local()
+    ultimo = db.latest_local(lot)
     if newest["proximo"].get("concurso") and ultimo and newest["concurso"] >= ultimo["concurso"]:
-        db.set_meta("proximo", newest["proximo"])
+        db.set_meta(_prox_key(lot), newest["proximo"])
 
     return {
         "added": len(rows),
         "skipped": len(errors),
         "errors": errors[:5],
-        "total_draws": db.count_draws(),
+        "total_draws": db.count_draws(lot),
     }
 
 
 @router.post("/import-csv")
-async def import_csv(file: UploadFile):
-    """Plano C: importa um CSV com colunas concurso, data, dezena1..dezena6."""
+async def import_csv(file: UploadFile, loteria: str | None = Query(default=None)):
+    """Plano C: importa um CSV com colunas concurso, data, dezena1..dezenaN."""
+    lot = _loteria(loteria)
     raw = await file.read()
     try:
         text = raw.decode("utf-8-sig")
@@ -164,10 +187,10 @@ async def import_csv(file: UploadFile):
     rows, errors = parse_draws_csv(text)
     if not rows:
         raise HTTPException(400, f"nenhuma linha válida no CSV ({errors[:3]})")
-    db.upsert_draws(rows)
+    db.upsert_draws(rows, lot)
     return {
         "imported": len(rows),
         "skipped": len(errors),
         "errors": errors[:5],
-        "total_draws": db.count_draws(),
+        "total_draws": db.count_draws(lot),
     }

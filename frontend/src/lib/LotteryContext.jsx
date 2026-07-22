@@ -1,10 +1,15 @@
 import { createContext, useContext } from 'react'
 import { getLoteria } from './lotteries.js'
+import { setApiLoteria } from './api.js'
 
 const LotteryContext = createContext(null)
 
 export function LotteryProvider({ code, children }) {
   const cfg = getLoteria(code)
+  // Definido de forma SÍNCRONA no render (antes dos efeitos dos filhos), para
+  // que toda chamada de API das páginas já use a loteria correta — um efeito
+  // aqui rodaria depois dos efeitos das páginas (filhos correm antes do pai).
+  setApiLoteria(cfg.code)
   const value = {
     code: cfg.code,
     cfg,

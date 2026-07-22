@@ -2,21 +2,26 @@
 
 import random
 
-from . import db, generator
+from . import db, generator, lotteries
 
 FAIXAS = {6: "sena", 5: "quina", 4: "quadra"}
 
 
-def conferir(dezenas: list[int], resultado: list[int]) -> dict:
+def conferir(dezenas: list[int], resultado: list[int], loteria: str = "mega") -> dict:
+    """Conta acertos e determina a faixa premiada conforme a loteria.
+
+    Na Lotomania, 0 acertos também é faixa premiada — por isso usamos a
+    tabela de faixas da própria loteria em vez de um mínimo fixo."""
+    faixas = lotteries.get_loteria(loteria)["faixas"]
     acertos = len(set(dezenas) & set(resultado))
-    return {"acertos": acertos, "faixa": FAIXAS.get(acertos)}
+    return {"acertos": acertos, "faixa": faixas.get(acertos)}
 
 
-def conferir_apostas(apostas: list[dict]) -> list[dict]:
+def conferir_apostas(apostas: list[dict], loteria: str = "mega") -> list[dict]:
     """Confere uma lista de {concurso, dezenas} contra o cache local."""
     out = []
     for a in apostas:
-        draw = db.get_draw(a["concurso"])
+        draw = db.get_draw(a["concurso"], loteria)
         if draw is None:
             out.append(
                 {
@@ -28,7 +33,7 @@ def conferir_apostas(apostas: list[dict]) -> list[dict]:
                 }
             )
         else:
-            c = conferir(a["dezenas"], draw["dezenas"])
+            c = conferir(a["dezenas"], draw["dezenas"], loteria)
             out.append(
                 {
                     "concurso": a["concurso"],

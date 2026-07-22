@@ -2,28 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, apiUpload } from '../lib/api.js'
 import { BallRow } from '../components/Ball.jsx'
 import { formatDate } from '../lib/format.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 
 const PAGE = 24
 
 // Fontes oficiais acessadas DIRETO do navegador do usuário. A Caixa/guidi
 // bloqueiam IPs de datacenter (o servidor no Vercel), mas não o IP residencial
 // de quem usa o site — então os concursos mais novos entram por aqui.
-const FONTES_DIRETAS = [
-  {
-    nome: 'Caixa',
-    url: (n) =>
-      n
-        ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${n}`
-        : 'https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena',
-  },
-  {
-    nome: 'guidi',
-    url: (n) =>
-      n
-        ? `https://api.guidi.dev.br/loteria/megasena/${n}`
-        : 'https://api.guidi.dev.br/loteria/megasena/ultimo',
-  },
-]
+// As URLs dependem do "slug" da loteria (megasena, lotomania, ...).
+function fontesDiretas(fonte) {
+  return [
+    {
+      nome: 'Caixa',
+      url: (n) =>
+        n
+          ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/${fonte}/${n}`
+          : `https://servicebus2.caixa.gov.br/portaldeloterias/api/${fonte}`,
+    },
+    {
+      nome: 'guidi',
+      url: (n) =>
+        n
+          ? `https://api.guidi.dev.br/loteria/${fonte}/${n}`
+          : `https://api.guidi.dev.br/loteria/${fonte}/ultimo`,
+    },
+  ]
+}
 
 async function fetchDireto(url) {
   const ctl = new AbortController()
@@ -39,8 +43,8 @@ async function fetchDireto(url) {
 
 // Busca do navegador os concursos que faltam depois do último salvo e envia
 // os payloads brutos ao backend (/import-payloads), que valida e grava.
-async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress) {
-  for (const fonte of FONTES_DIRETAS) {
+async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress, fontes) {
+  for (const fonte of fontes) {
     try {
       const ultimo = await fetchDireto(fonte.url())
       const numUltimo = Number(ultimo.numero ?? ultimo.concurso)
@@ -77,6 +81,7 @@ async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress) {
 }
 
 export default function Sorteios() {
+  const { cfg } = useLottery()
   const [status, setStatus] = useState(null)
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -122,8 +127,12 @@ export default function Sorteios() {
       let direto = null
       if (ultimoLocal > 0) {
         setSync({ added, remaining: 0, fase: 'navegador' })
-        direto = await sincronizarPeloNavegador(ultimoLocal, apiPost, (env, alvo) =>
-          setSync({ added: added + env, remaining: Math.max(alvo - env, 0), fase: 'navegador' }),
+        direto = await sincronizarPeloNavegador(
+          ultimoLocal,
+          apiPost,
+          (env, alvo) =>
+            setSync({ added: added + env, remaining: Math.max(alvo - env, 0), fase: 'navegador' }),
+          fontesDiretas(cfg.fonte),
         )
       }
 

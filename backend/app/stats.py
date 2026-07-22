@@ -22,14 +22,19 @@ def _window(draws: list[dict], window: int) -> list[dict]:
     return draws[-window:] if window and window > 0 else draws
 
 
-def frequency(draws: list[dict], window: int = 0) -> dict:
+def _pool(numbers=None):
+    return numbers if numbers is not None else NUMBERS
+
+
+def frequency(draws: list[dict], window: int = 0, numbers=None, pick: int = 6) -> dict:
+    nums = _pool(numbers)
     considered = _window(draws, window)
     counts = Counter()
     for d in considered:
         counts.update(d["dezenas"])
-    freq = [{"n": n, "count": counts.get(n, 0)} for n in NUMBERS]
+    freq = [{"n": n, "count": counts.get(n, 0)} for n in nums]
     ordered = sorted(freq, key=lambda f: (-f["count"], f["n"]))
-    expected = len(considered) * 6 / 60  # média esperada por número
+    expected = len(considered) * pick / len(list(nums))  # média esperada por número
     return {
         "window": window,
         "draws_considered": len(considered),
@@ -40,16 +45,17 @@ def frequency(draws: list[dict], window: int = 0) -> dict:
     }
 
 
-def current_delays(draws: list[dict]) -> dict:
+def current_delays(draws: list[dict], numbers=None) -> dict:
     """Atraso atual: há quantos concursos cada número não sai
     (0 = saiu no último sorteio; nunca saiu = total de sorteios)."""
+    nums = _pool(numbers)
     total = len(draws)
     last_index: dict[int, int] = {}
     for i, d in enumerate(draws):
         for n in d["dezenas"]:
             last_index[n] = i
     delays = []
-    for n in NUMBERS:
+    for n in nums:
         if n in last_index:
             delays.append(
                 {

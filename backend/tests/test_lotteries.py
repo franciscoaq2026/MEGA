@@ -102,6 +102,67 @@ def test_aposta_lotomania_via_api():
         assert {cc_loto, cc_mega}.issubset({b["concurso"] for b in todas})
 
 
+def test_generate_lotomania():
+    with make_client() as c:
+        r = c.post("/api/generate?loteria=loto", json={"estrategia": "aleatorio", "jogos": 2, "dezenas": 50})
+        assert r.status_code == 200, r.text
+        jogos = r.json()["jogos"]
+        assert len(jogos) == 2
+        for j in jogos:
+            assert len(j["dezenas"]) == 50
+            assert all(0 <= n <= 99 for n in j["dezenas"])
+
+
+def test_check_lotomania_zero_acertos_premia():
+    with make_client() as c:
+        # sorteio da Lotomania: 20 dezenas de 00 a 19
+        db.upsert_draws(
+            [{"concurso": 995001, "data": "2026-01-01", "dezenas": list(range(0, 20))}], "loto"
+        )
+        # aposta com 50 dezenas de 50 a 99 -> 0 acertos (premia na Lotomania!)
+        r = c.post(
+            "/api/check?loteria=loto",
+            json={"apostas": [{"concurso": 995001, "dezenas": list(range(50, 100))}]},
+        )
+        assert r.status_code == 200, r.text
+        res = r.json()["resultados"][0]
+        assert res["encontrado"] is True
+        assert res["acertos"] == 0
+        assert res["faixa"] == "0 acertos"  # 0 acertos é faixa premiada
+
+
+def test_import_payloads_lotomania():
+    with make_client() as c:
+        payload = {
+            "numero": 995500,
+            "listaDezenas": [f"{n:02d}" for n in range(0, 20)],
+            "dataApuracao": "10/02/2026",
+            "numeroConcursoProximo": 995501,
+        }
+        r = c.post("/api/import-payloads?loteria=loto", json={"payloads": [payload]})
+        assert r.status_code == 200, r.text
+        assert r.json()["added"] == 1
+        got = db.get_draw(995500, "loto")
+        assert got is not None and len(got["dezenas"]) == 20
+
+
+def test_stats_frequency_lotomania_cobre_100_numeros():
+    with make_client() as c:
+        db.upsert_draws(
+            [{"concurso": 996001, "data": "2026-01-01", "dezenas": list(range(0, 20))}], "loto"
+        )
+        r = c.get("/api/stats/frequency?loteria=loto")
+        assert r.status_code == 200, r.text
+        assert len(r.json()["freq"]) == 100  # 00 a 99
+
+
+def test_avancados_bloqueados_na_lotomania():
+    with make_client() as c:
+        assert c.get("/api/odds?loteria=loto").status_code == 409
+        assert c.get("/api/stats/parity?loteria=loto").status_code == 409
+        assert c.post("/api/generate-advanced?loteria=loto", json={"jogos": 1}).status_code == 409
+
+
 def test_validacao_dezenas_por_loteria():
     with make_client() as c:
         sid = _login(c)

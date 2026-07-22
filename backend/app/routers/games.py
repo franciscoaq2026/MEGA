@@ -40,11 +40,39 @@ class GenerateRequest(BaseModel):
     jogos: int = Field(1, ge=1, le=20)
     dezenas: int = Field(6, ge=1, le=50)
     anti_rateio: bool = False
+    espelho: bool = False  # Lotomania: gera também o complemento (cobre os 100)
 
 
 @router.get("/strategies")
 def strategies():
     return {"estrategias": generator.ESTRATEGIAS}
+
+
+def _com_espelho(jogos: list[dict], cfg: dict) -> list[dict]:
+    """Para cada jogo, acrescenta o 'espelho' (as dezenas NÃO marcadas). Só faz
+    sentido quando uma aposta cobre metade do volante (Lotomania: 50 de 100),
+    de modo que jogo + espelho cobrem todas as dezenas.
+
+    Fato matemático: jogo e espelho SEMPRE somam o total sorteado de acertos
+    (ex.: 20). Isso amplia a chance de ganhar ALGUM prêmio (dois bilhetes que
+    não se sobrepõem) e, se um fizer o acerto máximo, o outro faz 0 (e ambos
+    pagam). NÃO aumenta a probabilidade do prêmio principal — essa é fixa."""
+    pool = set(range(cfg["min_num"], cfg["max_num"] + 1))
+    out: list[dict] = []
+    for i, j in enumerate(jogos):
+        base = dict(j, espelho=False, par=i)
+        espelho_dz = sorted(pool - set(j["dezenas"]))
+        espelho = {
+            "dezenas": espelho_dz,
+            "soma": sum(espelho_dz),
+            "pares": sum(1 for n in espelho_dz if n % 2 == 0),
+            "padroes_populares": [],
+            "espelho": True,
+            "par": i,
+        }
+        out.append(base)
+        out.append(espelho)
+    return out
 
 
 @router.post("/generate")
@@ -60,10 +88,15 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
             "(o aleatório puro funciona sem histórico)",
         )
     jogos = generator.gerar(draws, req.estrategia, req.jogos, dezenas, req.anti_rateio, loteria=lot)
+    # Espelho: só quando uma aposta cobre metade do volante (2*escolher == total).
+    espelho_ok = req.espelho and 2 * cfg["escolher"] == cfg["total"]
+    if espelho_ok:
+        jogos = _com_espelho(jogos, cfg)
     return {
         "estrategia": req.estrategia,
         "descricao": generator.ESTRATEGIAS[req.estrategia],
         "anti_rateio": req.anti_rateio,
+        "espelho": espelho_ok,
         "jogos": jogos,
         "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
     }

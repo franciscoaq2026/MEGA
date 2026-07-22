@@ -113,6 +113,37 @@ def test_generate_lotomania():
             assert all(0 <= n <= 99 for n in j["dezenas"])
 
 
+def test_aposta_espelho_lotomania():
+    with make_client() as c:
+        r = c.post(
+            "/api/generate?loteria=loto",
+            json={"estrategia": "aleatorio", "jogos": 1, "dezenas": 50, "espelho": True},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["espelho"] is True
+        jogos = body["jogos"]
+        assert len(jogos) == 2  # base + espelho
+        base = next(j for j in jogos if not j["espelho"])
+        esp = next(j for j in jogos if j["espelho"])
+        # complementares: disjuntos e juntos cobrem todos os 100 números
+        assert set(base["dezenas"]).isdisjoint(esp["dezenas"])
+        assert set(base["dezenas"]) | set(esp["dezenas"]) == set(range(0, 100))
+        assert len(base["dezenas"]) == 50 and len(esp["dezenas"]) == 50
+
+
+def test_espelho_ignorado_na_mega():
+    with make_client() as c:
+        # Mega: aposta não cobre metade do volante -> espelho não se aplica
+        r = c.post(
+            "/api/generate?loteria=mega",
+            json={"estrategia": "aleatorio", "jogos": 2, "dezenas": 6, "espelho": True},
+        )
+        assert r.status_code == 200
+        assert r.json()["espelho"] is False
+        assert len(r.json()["jogos"]) == 2  # sem espelhos acrescentados
+
+
 def test_check_lotomania_zero_acertos_premia():
     with make_client() as c:
         # sorteio da Lotomania: 20 dezenas de 00 a 19
@@ -158,9 +189,31 @@ def test_stats_frequency_lotomania_cobre_100_numeros():
 
 def test_avancados_bloqueados_na_lotomania():
     with make_client() as c:
+        # odds, gerador avançado e raio-x continuam só na Mega
         assert c.get("/api/odds?loteria=loto").status_code == 409
-        assert c.get("/api/stats/parity?loteria=loto").status_code == 409
         assert c.post("/api/generate-advanced?loteria=loto", json={"jogos": 1}).status_code == 409
+        assert c.get("/api/stats/xray/1?loteria=loto").status_code == 409
+
+
+def test_stats_avancadas_lotomania_generalizadas():
+    with make_client() as c:
+        db.upsert_draws(
+            [{"concurso": 997000 + i, "data": "2026-01-01", "dezenas": list(range(i, i + 20))}
+             for i in range(5)],
+            "loto",
+        )
+        # paridade: 21 faixas (0..20 pares) para 20 sorteadas
+        par = c.get("/api/stats/parity?loteria=loto")
+        assert par.status_code == 200, par.text
+        assert len(par.json()["rows"]) == 21
+        assert par.json()["rows"][-1]["evens"] == 20
+        # soma: média teórica = 20 * (0+99)/2 = 990
+        s = c.get("/api/stats/sums?loteria=loto")
+        assert s.status_code == 200
+        assert s.json()["theoretical_mean"] == 990.0
+        # duplas
+        pr = c.get("/api/stats/pairs?loteria=loto")
+        assert pr.status_code == 200 and "pairs" in pr.json()
 
 
 def test_validacao_dezenas_por_loteria():

@@ -50,15 +50,15 @@ def delay(loteria: str | None = Query(default=None)):
 @router.get("/parity")
 def parity(loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
-    _somente_avancada(lot)
-    return stats.parity_distribution(_draws(lot))
+    numbers, drawn = _pool(lot)
+    return stats.parity_distribution(_draws(lot), numbers=numbers, drawn=drawn)
 
 
 @router.get("/sums")
 def sums(loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
-    _somente_avancada(lot)
-    return stats.sum_distribution(_draws(lot))
+    numbers, drawn = _pool(lot)
+    return stats.sum_distribution(_draws(lot), numbers=numbers, drawn=drawn)
 
 
 @router.get("/pairs")
@@ -67,8 +67,8 @@ def pairs(
     loteria: str | None = Query(default=None),
 ):
     lot = _lot(loteria)
-    _somente_avancada(lot)
-    return stats.top_pairs(_draws(lot), limit)
+    numbers, drawn = _pool(lot)
+    return stats.top_pairs(_draws(lot), limit, numbers=numbers, drawn=drawn)
 
 
 @router.get("/xray/{concurso}")

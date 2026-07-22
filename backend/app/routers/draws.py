@@ -17,14 +17,33 @@ def _prox_key(loteria: str) -> str:
     return "proximo" if loteria == "mega" else f"proximo:{loteria}"
 
 
+def _proximo_saneado(lot: str, ultimo: dict | None) -> dict | None:
+    """Evita mostrar um "próximo concurso" defasado. Se o valor guardado
+    estiver ausente ou for <= ao último sorteio já no cache (meta antiga que
+    não acompanhou os concursos adicionados depois), deriva o próximo do
+    último local (nº +1), sem data/prêmio (que seriam do concurso errado)."""
+    prox = db.get_meta(_prox_key(lot))
+    if not ultimo:
+        return prox
+    if prox and prox.get("concurso") and prox["concurso"] > ultimo["concurso"]:
+        return prox
+    return {
+        "concurso": ultimo["concurso"] + 1,
+        "data": None,
+        "estimativa": None,
+        "acumulado": None,
+    }
+
+
 @router.get("/status")
 def status(loteria: str | None = Query(default=None)):
     lot = _loteria(loteria)
+    ultimo = db.latest_local(lot)
     return {
         "loteria": lot,
         "total_draws": db.count_draws(lot),
-        "ultimo_local": db.latest_local(lot),
-        "proximo": db.get_meta(_prox_key(lot)),
+        "ultimo_local": ultimo,
+        "proximo": _proximo_saneado(lot, ultimo),
         "db_backend": db.backend_name(),
     }
 
@@ -72,10 +91,12 @@ def _sync_from_seed(lot: str, max_batch: int) -> dict:
         db.upsert_draws(batch, lot)
 
     last = max(s["concurso"] for s in seed)
-    db.set_meta(
-        _prox_key(lot),
-        {"concurso": last + 1, "data": None, "estimativa": None, "acumulado": None},
-    )
+    ultimo_local = db.latest_local(lot)
+    if not ultimo_local or last >= ultimo_local["concurso"]:
+        db.set_meta(
+            _prox_key(lot),
+            {"concurso": last + 1, "data": None, "estimativa": None, "acumulado": None},
+        )
     return {
         "source": "dados-embutidos",
         "latest_remote": last,
@@ -104,8 +125,13 @@ async def sync(
     except FetchError:
         return _sync_from_seed(lot, max_batch)
 
-    db.set_meta(_prox_key(lot), latest["proximo"])
     latest_num = latest["concurso"]
+    # Só atualiza o "próximo" se a fonte não estiver defasada em relação ao que
+    # já temos localmente. Evita que um espelho estático atrasado rebaixe o
+    # próximo depois de o navegador já ter trazido concursos mais novos.
+    ultimo_local = db.latest_local(lot)
+    if not ultimo_local or latest_num >= ultimo_local["concurso"]:
+        db.set_meta(_prox_key(lot), latest["proximo"])
 
     # Precisa buscar: concursos ausentes OU salvos sem data.
     dated = db.concursos_com_data(lot)

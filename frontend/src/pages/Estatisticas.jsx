@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useLottery } from '../lib/LotteryContext.jsx'
 import {
   Bar,
   BarChart,
@@ -172,6 +173,7 @@ function XRay({ defaultConcurso }) {
 }
 
 export default function Estatisticas() {
+  const { code, cfg } = useLottery()
   const [empty, setEmpty] = useState(false)
   const [error, setError] = useState(null)
   const [windowSize, setWindowSize] = useState(0)
@@ -190,19 +192,21 @@ export default function Estatisticas() {
           return
         }
         setUltimo(st.ultimo_local.concurso)
-        const [d, p, s, pr] = await Promise.all([
-          apiGet('/stats/delay'),
-          apiGet('/stats/parity'),
-          apiGet('/stats/sums'),
-          apiGet('/stats/pairs?limit=15'),
-        ])
-        setDelay(d)
-        setParity(p)
-        setSums(s)
-        setPairs(pr)
+        setDelay(await apiGet('/stats/delay'))
+        // Paridade, soma e pares ainda são específicos da Mega-Sena.
+        if (cfg.avancada) {
+          const [p, s, pr] = await Promise.all([
+            apiGet('/stats/parity'),
+            apiGet('/stats/sums'),
+            apiGet('/stats/pairs?limit=15'),
+          ])
+          setParity(p)
+          setSums(s)
+          setPairs(pr)
+        }
       })
       .catch((e) => setError(e.message))
-  }, [])
+  }, [cfg.avancada])
 
   useEffect(() => {
     if (empty) return
@@ -219,7 +223,7 @@ export default function Estatisticas() {
         <h2 className="text-lg font-bold mb-1">Estatísticas</h2>
         <p className="text-sm text-zinc-500">
           O cache de sorteios está vazio. Vá em{' '}
-          <Link to="/sorteios" className="text-emerald-700 font-medium underline">
+          <Link to={`/${code}/sorteios`} className="text-emerald-700 font-medium underline">
             Sorteios
           </Link>{' '}
           e sincronize (ou importe um CSV) para liberar as análises.
@@ -447,7 +451,14 @@ export default function Estatisticas() {
         </Card>
       )}
 
-      {ultimo && <XRay defaultConcurso={ultimo} />}
+      {cfg.avancada && ultimo && <XRay defaultConcurso={ultimo} />}
+
+      {!cfg.avancada && (
+        <p className="text-xs text-zinc-500 border-t border-zinc-100 pt-3">
+          Paridade, soma, duplas e Raio-X ainda são específicos da Mega-Sena. Para a{' '}
+          {cfg.nome}, use a frequência e o atraso acima.
+        </p>
+      )}
     </div>
   )
 }

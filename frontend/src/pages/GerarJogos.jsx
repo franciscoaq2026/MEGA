@@ -6,6 +6,7 @@ import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Help from '../components/Help.jsx'
 import { formatMoney } from '../lib/format.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 
 const ESTRATEGIAS = [
   {
@@ -37,9 +38,11 @@ const ESTRATEGIAS = [
 const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
 
 export default function GerarJogos() {
+  const { code, cfg } = useLottery()
+  const dezenasFixas = cfg.escolher === cfg.maxEscolher // Lotomania: sempre 50
   const [estrategia, setEstrategia] = useState('aleatorio')
   const [qtdJogos, setQtdJogos] = useState(3)
-  const [dezenas, setDezenas] = useState(6)
+  const [dezenas, setDezenas] = useState(cfg.escolher)
   const [antiRateio, setAntiRateio] = useState(false)
   const [preco, setPreco] = useState('6.00')
   const [odds, setOdds] = useState(null)
@@ -62,15 +65,20 @@ export default function GerarJogos() {
   }, [])
 
   useEffect(() => {
+    if (!cfg.avancada) {
+      setOdds(null)
+      return
+    }
     const precoNum = Number.parseFloat(preco.replace(',', '.')) || 0
     apiGet(`/odds?dezenas=${dezenas}&preco_simples=${precoNum}`)
       .then(setOdds)
       .catch(() => setOdds(null))
-  }, [dezenas, preco])
+  }, [dezenas, preco, cfg.avancada])
 
   function salvar(i, jogo) {
     if (!concursoSalvar) return
     addBet({
+      loteria: code,
       concurso: concursoSalvar,
       origem: 'app',
       estrategia: result.estrategia,
@@ -120,8 +128,8 @@ export default function GerarJogos() {
         </p>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4 items-start">
-        <Card title="Estratégia" className="lg:col-span-2">
+      <div className={`grid gap-4 items-start ${cfg.avancada ? 'lg:grid-cols-3' : ''}`}>
+        <Card title="Estratégia" className={cfg.avancada ? 'lg:col-span-2' : ''}>
           <div className="grid sm:grid-cols-2 gap-2">
             {ESTRATEGIAS.map((e) => (
               <label
@@ -164,23 +172,30 @@ export default function GerarJogos() {
                 className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
               />
             </label>
-            <label className="text-sm">
-              <span className="text-zinc-600 inline-flex items-center gap-1.5">
-                Dezenas por jogo (6–20)
-                <Help text="Tamanho de cada aposta. 6 = aposta simples (mais barata). De 7 a 20 = aposta múltipla: cobre mais números e tem chance maior, mas o preço sobe MUITO (veja em Probabilidades reais)." />
-              </span>
-              <select
-                value={dezenas}
-                onChange={(e) => setDezenas(Number(e.target.value))}
-                className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
-              >
-                {Array.from({ length: 15 }, (_, i) => 6 + i).map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {dezenasFixas ? (
+              <div className="text-sm">
+                <span className="text-zinc-600">Dezenas por jogo</span>
+                <p className="mt-1 font-medium">{cfg.escolher} (fixo na {cfg.nome})</p>
+              </div>
+            ) : (
+              <label className="text-sm">
+                <span className="text-zinc-600 inline-flex items-center gap-1.5">
+                  Dezenas por jogo ({cfg.escolher}–{cfg.maxEscolher})
+                  <Help text="Tamanho de cada aposta. 6 = aposta simples (mais barata). De 7 a 20 = aposta múltipla: cobre mais números e tem chance maior, mas o preço sobe MUITO (veja em Probabilidades reais)." />
+                </span>
+                <select
+                  value={dezenas}
+                  onChange={(e) => setDezenas(Number(e.target.value))}
+                  className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
+                >
+                  {Array.from({ length: cfg.maxEscolher - cfg.escolher + 1 }, (_, i) => cfg.escolher + i).map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="flex items-start gap-2 text-sm sm:mt-6">
               <input
                 type="checkbox"
@@ -211,6 +226,7 @@ export default function GerarJogos() {
           {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </Card>
 
+        {cfg.avancada && (
         <Card
           title={
             <span className="inline-flex items-center gap-1.5">
@@ -263,6 +279,7 @@ export default function GerarJogos() {
             <p className="text-sm text-zinc-500">Carregando…</p>
           )}
         </Card>
+        )}
       </div>
 
       {result && (
@@ -300,7 +317,7 @@ export default function GerarJogos() {
                   {salvos[i] ? (
                     <span className="text-xs text-emerald-700 font-medium">
                       ✓ salvo no concurso {salvos[i]} —{' '}
-                      <Link to="/meus-jogos" className="underline">
+                      <Link to={`/${code}/meus-jogos`} className="underline">
                         ver em Meus jogos
                       </Link>
                     </span>
@@ -320,6 +337,7 @@ export default function GerarJogos() {
         </Card>
       )}
 
+      {cfg.avancada && (
       <Card
         title={
           <span className="inline-flex items-center gap-1.5">
@@ -372,6 +390,7 @@ export default function GerarJogos() {
           </div>
         )}
       </Card>
+      )}
     </div>
   )
 }

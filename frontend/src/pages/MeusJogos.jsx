@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
 import { addBet, exportBets, importBets, loadBets, removeBet, syncBets } from '../lib/bets.js'
 import { getSession, logout, requestLink } from '../lib/auth.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Volante from '../components/Volante.jsx'
@@ -63,6 +64,7 @@ function BetItem({ bet, check, onRemove }) {
 }
 
 export default function MeusJogos() {
+  const { cfg, code } = useLottery()
   const [bets, setBets] = useState([])
   const [checks, setChecks] = useState({}) // bet.id -> resultado da conferência
   const [status, setStatus] = useState(null)
@@ -77,12 +79,12 @@ export default function MeusJogos() {
   const refresh = useCallback(async () => {
     if (getSession()) {
       try {
-        await syncBets() // traz jogos de outros aparelhos e migra os locais
+        await syncBets(code) // traz jogos de outros aparelhos e migra os locais
       } catch {
         // sem rede/sessão expirada: segue com o que está no navegador
       }
     }
-    const list = loadBets()
+    const list = loadBets(code)
     setBets(list)
     if (list.length === 0) return
     try {
@@ -98,7 +100,7 @@ export default function MeusJogos() {
       // backend fora do ar: mostra os jogos sem conferência
       setChecks({})
     }
-  }, [])
+  }, [code])
 
   useEffect(() => {
     refresh()
@@ -112,22 +114,22 @@ export default function MeusJogos() {
   }, [refresh])
 
   function salvarManual() {
-    if (dezenas.length !== 6 || !concurso) return
-    addBet({ concurso, origem: 'manual', dezenas })
+    if (dezenas.length !== cfg.escolher || !concurso) return
+    addBet({ loteria: code, concurso, origem: 'manual', dezenas })
     setDezenas([])
     setMessage({ type: 'ok', text: `Jogo manual salvo no concurso ${concurso}.` })
     refresh()
   }
 
   function remover(id) {
-    removeBet(id)
+    removeBet(code, id)
     refresh()
   }
 
   async function importar(file) {
     if (!file) return
     try {
-      const r = await importBets(file)
+      const r = await importBets(file, code)
       setMessage({ type: 'ok', text: `Backup importado: ${r.importados} jogo(s).` })
       refresh()
     } catch (e) {
@@ -213,7 +215,7 @@ export default function MeusJogos() {
         <h2 className="text-lg font-bold">Meus jogos</h2>
         <div className="flex gap-2">
           <button
-            onClick={exportBets}
+            onClick={() => exportBets(code)}
             disabled={bets.length === 0}
             className="px-3 py-1.5 rounded-lg border border-zinc-300 bg-white text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
           >
@@ -288,7 +290,7 @@ export default function MeusJogos() {
           ? 'Os jogos ficam na sua conta (nuvem) e também neste navegador. '
           : 'Os jogos ficam salvos neste navegador. Use o backup ou o login acima para levar para outro aparelho. '}
         O “jogo do app” é salvo pela tela{' '}
-        <Link to="/gerar" className="text-emerald-700 underline">
+        <Link to={`/${code}/gerar`} className="text-emerald-700 underline">
           Gerar jogos
         </Link>
         .
@@ -308,11 +310,11 @@ export default function MeusJogos() {
 
       <Card
         title="Adicionar meu jogo (manual)"
-        subtitle="Digite as 6 dezenas que VOCÊ escolheu (de qualquer fonte) e vincule ao concurso"
+        subtitle={`Marque as ${cfg.escolher} dezenas que VOCÊ escolheu (de qualquer fonte) e vincule ao concurso`}
       >
         <div className="flex flex-col sm:flex-row gap-4">
           <div>
-            <Volante selected={dezenas} onChange={setDezenas} max={6} />
+            <Volante selected={dezenas} onChange={setDezenas} max={cfg.escolher} />
           </div>
           <div className="space-y-3 min-w-48">
             <label className="text-sm block">
@@ -329,7 +331,9 @@ export default function MeusJogos() {
               )}
             </label>
             <div className="text-sm">
-              <span className="text-zinc-600">Selecionadas ({dezenas.length}/6):</span>
+              <span className="text-zinc-600">
+                Selecionadas ({dezenas.length}/{cfg.escolher}):
+              </span>
               <div className="mt-1 min-h-8">
                 {dezenas.length > 0 ? (
                   <BallRow dezenas={dezenas} size="sm" />
@@ -340,7 +344,7 @@ export default function MeusJogos() {
             </div>
             <button
               onClick={salvarManual}
-              disabled={dezenas.length !== 6 || !concurso}
+              disabled={dezenas.length !== cfg.escolher || !concurso}
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
             >
               Salvar meu jogo

@@ -80,8 +80,8 @@ export async function consumeLoginTokenFromUrl() {
   params.delete('login_token')
   const qs = params.toString()
   const base = window.location.pathname + (qs ? `?${qs}` : '')
-  // Após entrar, leva direto para "Meus jogos"; senão mantém a rota atual.
-  const hash = result?.status === 'success' ? '#/meus-jogos' : window.location.hash
+  // Após entrar, leva ao hub para escolher a loteria; senão mantém a rota atual.
+  const hash = result?.status === 'success' ? '#/' : window.location.hash
   window.history.replaceState({}, '', base + hash)
   return result
 }

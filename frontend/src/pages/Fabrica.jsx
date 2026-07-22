@@ -8,6 +8,7 @@ import Help from '../components/Help.jsx'
 import Volante from '../components/Volante.jsx'
 import MetricBadges from '../components/MetricBadges.jsx'
 import { formatMoney, formatNumber } from '../lib/format.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 
 const TABS = [
   ['gerador', '🎛️ Gerador avançado'],
@@ -42,6 +43,7 @@ function useProximoConcurso() {
 }
 
 function SaveRow({ jogos, estrategia }) {
+  const { code } = useLottery()
   const [concurso, setConcurso] = useProximoConcurso()
   const [salvos, setSalvos] = useState(false)
   return (
@@ -57,7 +59,7 @@ function SaveRow({ jogos, estrategia }) {
       {salvos ? (
         <span className="text-xs text-emerald-700 font-medium">
           ✓ salvo —{' '}
-          <Link to="/meus-jogos" className="underline">
+          <Link to={`/${code}/meus-jogos`} className="underline">
             ver em Meus jogos
           </Link>
         </span>
@@ -65,7 +67,9 @@ function SaveRow({ jogos, estrategia }) {
         <button
           onClick={() => {
             if (!concurso) return
-            jogos.forEach((dz) => addBet({ concurso, origem: 'app', estrategia, dezenas: dz }))
+            jogos.forEach((dz) =>
+              addBet({ loteria: code, concurso, origem: 'app', estrategia, dezenas: dz }),
+            )
             setSalvos(true)
           }}
           disabled={!concurso}
@@ -532,6 +536,7 @@ function Termometro() {
 /* --------------------------------- Página --------------------------------- */
 
 export default function Fabrica() {
+  const { code } = useLottery()
   const [tab, setTab] = useState('gerador')
   const [ranges, setRanges] = useState(null)
   const [empty, setEmpty] = useState(false)
@@ -556,7 +561,7 @@ export default function Fabrica() {
         <h2 className="text-lg font-bold mb-1">Fábrica de números</h2>
         <p className="text-sm text-zinc-500">
           Sincronize os sorteios em{' '}
-          <Link to="/sorteios" className="text-emerald-700 underline">
+          <Link to={`/${code}/sorteios`} className="text-emerald-700 underline">
             Sorteios
           </Link>{' '}
           para liberar as ferramentas (elas usam o histórico).

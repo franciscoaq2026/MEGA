@@ -61,10 +61,10 @@ def test_sync_incremental(monkeypatch):
         for n in range(1, 6)
     }
 
-    async def fake_latest():
+    async def fake_latest(loteria="mega"):
         return fake[5]
 
-    async def fake_many(nums, concurrency=8):
+    async def fake_many(nums, loteria="mega", concurrency=8):
         return [fake[n] for n in nums], []
 
     monkeypatch.setattr(draws_router, "fetch_latest", fake_latest)

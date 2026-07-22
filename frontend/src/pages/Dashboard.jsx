@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { apiGet } from '../lib/api.js'
 import { BallRow } from '../components/Ball.jsx'
 import { formatDate, formatMoney } from '../lib/format.js'
+import { useLottery } from '../lib/LotteryContext.jsx'
 
 export default function Dashboard() {
+  const { code } = useLottery()
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
 
@@ -37,7 +39,7 @@ export default function Dashboard() {
             histórico completo da Caixa e guarda em cache local.
           </p>
           <Link
-            to="/sorteios"
+            to={`/${code}/sorteios`}
             className="inline-block mt-3 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
           >
             Ir para Sorteios
@@ -83,13 +85,13 @@ export default function Dashboard() {
 
       <div className="grid sm:grid-cols-3 gap-4">
         {[
-          ['/estatisticas', 'Estatísticas', 'Frequência, atraso, pares/ímpares, soma e gráficos'],
-          ['/gerar', 'Gerar jogos', 'Estratégias baseadas no histórico + probabilidades reais'],
-          ['/meus-jogos', 'Meus jogos', 'Seu jogo manual vs jogo do app, com conferência'],
+          ['estatisticas', 'Estatísticas', 'Frequência, atraso, pares/ímpares, soma e gráficos'],
+          ['gerar', 'Gerar jogos', 'Estratégias baseadas no histórico + probabilidades reais'],
+          ['meus-jogos', 'Meus jogos', 'Seu jogo manual vs jogo do app, com conferência'],
         ].map(([to, title, desc]) => (
           <Link
             key={to}
-            to={to}
+            to={`/${code}/${to}`}
             className="bg-white border border-zinc-200 rounded-xl p-4 hover:border-emerald-400 transition-colors"
           >
             <p className="font-semibold text-sm">{title}</p>

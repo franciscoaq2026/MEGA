@@ -3,13 +3,27 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from .. import analysis, checker, db, generator
+from .. import analysis, checker, db, generator, lotteries
 
 router = APIRouter(tags=["jogos"])
 
 
-def _draws_or_409() -> list[dict]:
-    draws = db.get_all_draws_asc()
+def _lot(code: str | None) -> str:
+    return lotteries.get_loteria(code)["code"]
+
+
+def _somente_avancada(loteria: str) -> None:
+    cfg = lotteries.get_loteria(loteria)
+    if not cfg["avancada"]:
+        raise HTTPException(
+            409,
+            f"recurso disponível apenas para loterias com análise avançada "
+            f"(no momento, só a Mega-Sena); {cfg['nome']} não tem.",
+        )
+
+
+def _draws_or_409(loteria: str = "mega") -> list[dict]:
+    draws = db.get_all_draws_asc(loteria)
     if not draws:
         raise HTTPException(409, "cache vazio: sincronize os sorteios primeiro")
     return draws
@@ -24,7 +38,7 @@ def _valida_dezenas(v: list[int], tamanho_min: int = 1) -> list[int]:
 class GenerateRequest(BaseModel):
     estrategia: Literal["aleatorio", "frequencia", "atrasados", "balanceado"]
     jogos: int = Field(1, ge=1, le=20)
-    dezenas: int = Field(6, ge=6, le=20)
+    dezenas: int = Field(6, ge=1, le=50)
     anti_rateio: bool = False
 
 
@@ -34,15 +48,18 @@ def strategies():
 
 
 @router.post("/generate")
-def generate(req: GenerateRequest):
-    draws = db.get_all_draws_asc()
+def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
+    lot = _lot(loteria)
+    cfg = lotteries.get_loteria(lot)
+    dezenas = req.dezenas if cfg["escolher"] <= req.dezenas <= cfg["max_escolher"] else cfg["escolher"]
+    draws = db.get_all_draws_asc(lot)
     if not draws and req.estrategia != "aleatorio":
         raise HTTPException(
             409,
             "cache vazio: sincronize os sorteios para usar estratégias baseadas no histórico "
             "(o aleatório puro funciona sem histórico)",
         )
-    jogos = generator.gerar(draws, req.estrategia, req.jogos, req.dezenas, req.anti_rateio)
+    jogos = generator.gerar(draws, req.estrategia, req.jogos, dezenas, req.anti_rateio, loteria=lot)
     return {
         "estrategia": req.estrategia,
         "descricao": generator.ESTRATEGIAS[req.estrategia],
@@ -56,7 +73,9 @@ def generate(req: GenerateRequest):
 def odds(
     dezenas: int = Query(6, ge=6, le=20),
     preco_simples: float = Query(6.0, ge=0, le=1000),
+    loteria: str | None = Query(default=None),
 ):
+    _somente_avancada(_lot(loteria))
     return generator.odds(dezenas, preco_simples)
 
 
@@ -64,10 +83,12 @@ def odds(
 
 
 @router.get("/analysis/ranges")
-def analysis_ranges():
+def analysis_ranges(loteria: str | None = Query(default=None)):
     """Faixas típicas (p10–p90), média e desvio de cada indicador — base dos
     filtros inteligentes e do termômetro."""
-    return analysis.historical_ranges(_draws_or_409())
+    lot = _lot(loteria)
+    _somente_avancada(lot)
+    return analysis.historical_ranges(_draws_or_409(lot))
 
 
 class Faixa(BaseModel):
@@ -110,8 +131,10 @@ class GenerateAdvancedRequest(BaseModel):
 
 
 @router.post("/generate-advanced")
-def generate_advanced(req: GenerateAdvancedRequest):
-    draws = _draws_or_409()
+def generate_advanced(req: GenerateAdvancedRequest, loteria: str | None = Query(default=None)):
+    lot = _lot(loteria)
+    _somente_avancada(lot)
+    draws = _draws_or_409(lot)
     try:
         resultado = generator.gerar_avancado(
             draws,
@@ -138,8 +161,10 @@ class ScoreRequest(BaseModel):
 
 
 @router.post("/score")
-def score(req: ScoreRequest):
-    draws = _draws_or_409()
+def score(req: ScoreRequest, loteria: str | None = Query(default=None)):
+    lot = _lot(loteria)
+    _somente_avancada(lot)
+    draws = _draws_or_409(lot)
     ranges = analysis.historical_ranges(draws)
     anterior = draws[-1]["dezenas"] if draws else None
     resultado = analysis.score(req.dezenas, ranges, anterior)
@@ -162,7 +187,8 @@ class WheelRequest(BaseModel):
 
 
 @router.post("/wheel")
-def wheel(req: WheelRequest):
+def wheel(req: WheelRequest, loteria: str | None = Query(default=None)):
+    _somente_avancada(_lot(loteria))
     k = len(req.dezenas)
     if req.tipo == "completa":
         if k > 11:
@@ -180,14 +206,16 @@ def wheel(req: WheelRequest):
 
 
 class Aposta(BaseModel):
+    # Intervalo permissivo para cobrir todas as loterias (Mega 1–60, 6–20
+    # dezenas; Lotomania 0–99, 50 dezenas). A conferência é só interseção.
     concurso: int = Field(ge=1)
-    dezenas: list[int] = Field(min_length=6, max_length=20)
+    dezenas: list[int] = Field(min_length=6, max_length=50)
 
     @field_validator("dezenas")
     @classmethod
     def dezenas_validas(cls, v: list[int]) -> list[int]:
-        if len(set(v)) != len(v) or not all(1 <= n <= 60 for n in v):
-            raise ValueError("dezenas devem ser únicas e estar entre 1 e 60")
+        if len(set(v)) != len(v) or not all(0 <= n <= 99 for n in v):
+            raise ValueError("dezenas devem ser únicas e estar entre 0 e 99")
         return sorted(v)
 
 
@@ -196,16 +224,22 @@ class CheckRequest(BaseModel):
 
 
 @router.post("/check")
-def check(req: CheckRequest):
+def check(req: CheckRequest, loteria: str | None = Query(default=None)):
     """Confere apostas (guardadas no navegador) contra o cache de resultados."""
-    return {"resultados": checker.conferir_apostas([a.model_dump() for a in req.apostas])}
+    lot = _lot(loteria)
+    return {"resultados": checker.conferir_apostas([a.model_dump() for a in req.apostas], lot)}
 
 
 @router.post("/backtest")
-def backtest(ultimos: int = Query(100, ge=10, le=500)):
+def backtest(
+    ultimos: int = Query(100, ge=10, le=500),
+    loteria: str | None = Query(default=None),
+):
     """Teste honesto: joga cada estratégia nos últimos N concursos usando só
     o histórico anterior de cada um — mostra que nenhuma supera o acaso."""
-    draws = db.get_all_draws_asc()
+    lot = _lot(loteria)
+    _somente_avancada(lot)
+    draws = db.get_all_draws_asc(lot)
     try:
         return checker.backtest(draws, ultimos)
     except ValueError as e:

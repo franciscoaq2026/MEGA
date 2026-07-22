@@ -43,26 +43,45 @@ def _freq_counts(draws: list[dict]) -> Counter:
     return counts
 
 
-def aleatorio(rng: random.Random, _draws: list[dict], k: int) -> list[int]:
-    return sorted(rng.sample(NUMBERS, k))
+def _delays_pool(draws: list[dict], numbers: list[int]) -> dict[int, int]:
+    """Atraso (concursos desde a última aparição) de cada número do pool,
+    calculado direto dos sorteios — genérico para qualquer loteria."""
+    last_seen: dict[int, int] = {}
+    for i, d in enumerate(draws):
+        for n in d["dezenas"]:
+            last_seen[n] = i
+    total = len(draws)
+    return {n: (total - 1 - last_seen[n]) if n in last_seen else total for n in numbers}
 
 
-def frequencia(rng: random.Random, draws: list[dict], k: int) -> list[int]:
+def aleatorio(rng: random.Random, _draws: list[dict], k: int, numbers: list[int] | None = None) -> list[int]:
+    numbers = numbers or NUMBERS
+    return sorted(rng.sample(numbers, k))
+
+
+def frequencia(rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None) -> list[int]:
+    numbers = numbers or NUMBERS
     counts = _freq_counts(draws)
-    return _weighted_sample(rng, {n: counts.get(n, 0) + 1 for n in NUMBERS}, k)
+    return _weighted_sample(rng, {n: counts.get(n, 0) + 1 for n in numbers}, k)
 
 
-def atrasados(rng: random.Random, draws: list[dict], k: int) -> list[int]:
-    delays = {d["n"]: d["delay"] for d in current_delays(draws)["delays"]}
-    return _weighted_sample(rng, {n: delays[n] + 1 for n in NUMBERS}, k)
+def atrasados(rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None) -> list[int]:
+    numbers = numbers or NUMBERS
+    delays = _delays_pool(draws, numbers)
+    return _weighted_sample(rng, {n: delays[n] + 1 for n in numbers}, k)
 
 
-def balanceado(rng: random.Random, draws: list[dict], k: int, max_tries: int = 400) -> list[int]:
+def balanceado(
+    rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None, max_tries: int = 400
+) -> list[int]:
+    numbers = numbers or NUMBERS
     counts = _freq_counts(draws)
-    ordered = sorted(NUMBERS, key=lambda n: (-counts.get(n, 0), n))
-    hot, cold = ordered[:30], ordered[30:]
+    ordered = sorted(numbers, key=lambda n: (-counts.get(n, 0), n))
+    metade = len(numbers) // 2
+    hot, cold = ordered[:metade], ordered[metade:]
 
-    sum_center = 30.5 * k
+    centro_num = (numbers[0] + numbers[-1]) / 2  # meio do intervalo
+    sum_center = centro_num * k
     sum_tol = 7 * k  # p/ 6 dezenas: 183 ± 42
     min_evens = max(0, k // 2 - 1)
     max_evens = min(k, (k + 1) // 2 + 1)
@@ -79,7 +98,7 @@ def balanceado(rng: random.Random, draws: list[dict], k: int, max_tries: int = 4
             best, best_gap = candidate, gap
         if min_evens <= evens <= max_evens and gap <= sum_tol:
             return candidate
-    return best or sorted(rng.sample(NUMBERS, k))
+    return best or sorted(rng.sample(numbers, k))
 
 
 GERADORES = {
@@ -125,7 +144,12 @@ def gerar(
     dezenas: int,
     anti_rateio: bool = False,
     rng: random.Random | None = None,
+    loteria: str = "mega",
 ) -> list[dict]:
+    from . import lotteries
+
+    cfg = lotteries.get_loteria(loteria)
+    numbers = list(range(cfg["min_num"], cfg["max_num"] + 1))
     rng = rng or random.Random()
     gerador = GERADORES[estrategia]
     senas = {tuple(sorted(d["dezenas"])) for d in draws}
@@ -134,7 +158,7 @@ def gerar(
     for _ in range(jogos):
         jogo, motivos = None, []
         for _tent in range(60):
-            jogo = gerador(rng, draws, dezenas)
+            jogo = gerador(rng, draws, dezenas, numbers)
             motivos = padrao_popular(jogo, senas)
             repetido = tuple(jogo) in vistos
             if not repetido and (not anti_rateio or not motivos):

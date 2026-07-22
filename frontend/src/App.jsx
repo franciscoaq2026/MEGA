@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
+import Hub from './pages/Hub.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Sorteios from './pages/Sorteios.jsx'
 import GerarJogos from './pages/GerarJogos.jsx'
@@ -13,7 +14,11 @@ const Estatisticas = lazy(() => import('./pages/Estatisticas.jsx'))
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      {/* Hub: escolha da loteria */}
+      <Route index element={<Hub />} />
+
+      {/* Cada loteria vive sob /:loteria (ex.: /mega, /loto) */}
+      <Route path=":loteria" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="sorteios" element={<Sorteios />} />
         <Route

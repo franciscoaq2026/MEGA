@@ -70,20 +70,25 @@ def current_delays(draws: list[dict], numbers=None) -> dict:
     return {"total_draws": total, "delays": delays, "top": top}
 
 
-def parity_distribution(draws: list[dict]) -> dict:
-    """Distribuição de quantidade de números pares por sorteio (0..6),
-    comparada com a probabilidade teórica (hipergeométrica: 30 pares e
-    30 ímpares entre 1 e 60)."""
+def parity_distribution(draws: list[dict], numbers=None, drawn: int = 6) -> dict:
+    """Distribuição de quantidade de números pares por sorteio, comparada com
+    a probabilidade teórica (hipergeométrica) do pool da loteria."""
+    nums = list(_pool(numbers))
+    pares_pool = sum(1 for n in nums if n % 2 == 0)
+    impares_pool = len(nums) - pares_pool
+    total_combos = comb(len(nums), drawn)
     observed = Counter(sum(1 for n in d["dezenas"] if n % 2 == 0) for d in draws)
     total = len(draws)
     rows = []
-    for evens in range(7):
-        theoretical = comb(30, evens) * comb(30, 6 - evens) / TOTAL_COMBOS
+    for evens in range(drawn + 1):
+        theoretical = (
+            comb(pares_pool, evens) * comb(impares_pool, drawn - evens) / total_combos
+        )
         count = observed.get(evens, 0)
         rows.append(
             {
                 "evens": evens,
-                "odds": 6 - evens,
+                "odds": drawn - evens,
                 "count": count,
                 "observed_pct": round(100 * count / total, 2) if total else 0,
                 "theoretical_pct": round(100 * theoretical, 2),
@@ -92,17 +97,23 @@ def parity_distribution(draws: list[dict]) -> dict:
     return {"total_draws": total, "rows": rows}
 
 
-def sum_distribution(draws: list[dict], bin_size: int = 15) -> dict:
+def sum_distribution(draws: list[dict], bin_size: int = 15, numbers=None, drawn: int = 6) -> dict:
+    nums = list(_pool(numbers))
+    lo, hi = nums[0], nums[-1]
+    # soma mínima = as `drawn` menores; máxima = as `drawn` maiores dezenas
+    soma_min = sum(nums[:drawn])
+    soma_max = sum(nums[-drawn:])
+    theoretical_mean = round(drawn * (lo + hi) / 2, 1)
     sums = [sum(d["dezenas"]) for d in draws]
-    # soma mínima teórica 21 (1..6), máxima 345 (55..60)
     bins: list[dict] = []
-    start = 21
-    while start <= 345:
-        end = min(start + bin_size - 1, 345)
+    start = soma_min
+    while start <= soma_max:
+        end = min(start + bin_size - 1, soma_max)
         bins.append({"from": start, "to": end, "label": f"{start}–{end}", "count": 0})
         start = end + 1
     for s in sums:
-        idx = min((s - 21) // bin_size, len(bins) - 1)
+        idx = min((s - soma_min) // bin_size, len(bins) - 1)
+        idx = max(0, idx)
         bins[idx]["count"] += 1
     return {
         "total_draws": len(sums),
@@ -110,11 +121,12 @@ def sum_distribution(draws: list[dict], bin_size: int = 15) -> dict:
         "mean": round(sum(sums) / len(sums), 1) if sums else None,
         "min": min(sums) if sums else None,
         "max": max(sums) if sums else None,
-        "theoretical_mean": THEORETICAL_SUM_MEAN,
+        "theoretical_mean": theoretical_mean,
     }
 
 
-def top_pairs(draws: list[dict], limit: int = 15) -> dict:
+def top_pairs(draws: list[dict], limit: int = 15, numbers=None, drawn: int = 6) -> dict:
+    nums = list(_pool(numbers))
     counts: Counter = Counter()
     for d in draws:
         counts.update(combinations(sorted(d["dezenas"]), 2))
@@ -123,7 +135,7 @@ def top_pairs(draws: list[dict], limit: int = 15) -> dict:
         for (a, b), c in counts.most_common(limit)
     ]
     # média esperada de aparições de um par específico
-    expected = len(draws) * comb(6, 2) / comb(60, 2)
+    expected = len(draws) * comb(drawn, 2) / comb(len(nums), 2)
     return {"total_draws": len(draws), "pairs": pairs, "expected_per_pair": round(expected, 2)}
 
 

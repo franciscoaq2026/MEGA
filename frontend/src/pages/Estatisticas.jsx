@@ -192,21 +192,19 @@ export default function Estatisticas() {
           return
         }
         setUltimo(st.ultimo_local.concurso)
-        setDelay(await apiGet('/stats/delay'))
-        // Paridade, soma e pares ainda são específicos da Mega-Sena.
-        if (cfg.avancada) {
-          const [p, s, pr] = await Promise.all([
-            apiGet('/stats/parity'),
-            apiGet('/stats/sums'),
-            apiGet('/stats/pairs?limit=15'),
-          ])
-          setParity(p)
-          setSums(s)
-          setPairs(pr)
-        }
+        const [d, p, s, pr] = await Promise.all([
+          apiGet('/stats/delay'),
+          apiGet('/stats/parity'),
+          apiGet('/stats/sums'),
+          apiGet('/stats/pairs?limit=15'),
+        ])
+        setDelay(d)
+        setParity(p)
+        setSums(s)
+        setPairs(pr)
       })
       .catch((e) => setError(e.message))
-  }, [cfg.avancada])
+  }, [])
 
   useEffect(() => {
     if (empty) return
@@ -455,8 +453,7 @@ export default function Estatisticas() {
 
       {!cfg.avancada && (
         <p className="text-xs text-zinc-500 border-t border-zinc-100 pt-3">
-          Paridade, soma, duplas e Raio-X ainda são específicos da Mega-Sena. Para a{' '}
-          {cfg.nome}, use a frequência e o atraso acima.
+          O “Raio-X de um sorteio” (teste de previsibilidade) ainda é específico da Mega-Sena.
         </p>
       )}
     </div>

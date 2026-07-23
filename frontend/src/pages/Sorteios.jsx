@@ -49,6 +49,16 @@ async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress, font
       const ultimo = await fetchDireto(fonte.url())
       const numUltimo = Number(ultimo.numero ?? ultimo.concurso)
       if (!Number.isFinite(numUltimo) || numUltimo <= ultimoLocal) {
+        // Já estamos em dia — mas reenvia o último resultado assim mesmo, para
+        // o backend atualizar o "próximo concurso" (data e prêmio estimado
+        // vêm no payload do último sorteio).
+        if (Number.isFinite(numUltimo)) {
+          try {
+            await apiPostFn('/import-payloads', { payloads: [ultimo] })
+          } catch {
+            // sem problema: só a atualização do "próximo" não aconteceu
+          }
+        }
         return { fonte: fonte.nome, enviados: 0, atualRemoto: numUltimo || ultimoLocal }
       }
       const faltando = []

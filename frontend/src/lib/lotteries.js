@@ -20,6 +20,12 @@ export const LOTERIAS = {
     accent: 'emerald',
     cardClass: 'hover:border-emerald-400',
     badgeClass: 'bg-emerald-600',
+    // Faixas premiadas: acertos -> rótulo do prêmio
+    premios: [
+      { ac: 6, label: 'Sena' },
+      { ac: 5, label: 'Quina' },
+      { ac: 4, label: 'Quadra' },
+    ],
   },
   loto: {
     code: 'loto',
@@ -39,6 +45,17 @@ export const LOTERIAS = {
     accent: 'indigo',
     cardClass: 'hover:border-indigo-400',
     badgeClass: 'bg-indigo-600',
+    // Faixas premiadas: acertos -> % do prêmio (regras da Lotomania).
+    // 0 acertos também premia — tão difícil quanto acertar 20.
+    premios: [
+      { ac: 20, label: '45% do prêmio' },
+      { ac: 19, label: '16%' },
+      { ac: 18, label: '10%' },
+      { ac: 17, label: '7%' },
+      { ac: 16, label: '7%' },
+      { ac: 15, label: '7%' },
+      { ac: 0, label: '8% · acertar NENHUMA' },
+    ],
   },
 }
 

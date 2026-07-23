@@ -353,6 +353,32 @@ export default function MeusJogos() {
         </div>
       </Card>
 
+      {cfg.premios && (
+        <Card
+          title={`Faixas premiadas — ${cfg.nome}`}
+          subtitle="Quantos acertos pagam prêmio (o app destaca os acertos ao conferir seus jogos abaixo)"
+        >
+          <div className="flex flex-wrap gap-2">
+            {cfg.premios.map((p) => (
+              <div
+                key={p.ac}
+                className="flex items-center gap-2 border border-zinc-200 rounded-lg px-3 py-1.5 text-sm"
+              >
+                <span className="font-semibold tabular-nums">{p.ac} acerto(s)</span>
+                <span className="text-zinc-400">·</span>
+                <span className="text-zinc-600">{p.label}</span>
+              </div>
+            ))}
+          </div>
+          {!cfg.avancada && (
+            <p className="text-[11px] text-zinc-500 mt-2">
+              Abaixo de 15 acertos não há prêmio (e, curiosamente, acertar 0 paga tanto quanto uma
+              faixa alta). Os % são a fatia do prêmio total destinada a cada faixa.
+            </p>
+          )}
+        </Card>
+      )}
+
       {comparativo && comparativo.confrontos > 0 && (
         <Card
           title="Comparativo: você vs. app"

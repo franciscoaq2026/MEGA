@@ -230,6 +230,26 @@ def test_proximo_nao_fica_defasado():
         assert st["proximo"]["data"] is None
 
 
+def test_reenviar_ultimo_atualiza_proximo():
+    with make_client() as c:
+        cc = 999100
+        db.upsert_draws([{"concurso": cc, "data": "2026-06-01", "dezenas": list(range(0, 20))}], "loto")
+        db.set_meta("proximo:loto", {"concurso": cc - 200, "data": "2026-01-01", "estimativa": 1, "acumulado": True})
+        # reenvia o payload do último (já no cache): deve atualizar o "próximo"
+        payload = {
+            "numero": cc,
+            "listaDezenas": [f"{n:02d}" for n in range(0, 20)],
+            "dataApuracao": "01/06/2026",
+            "numeroConcursoProximo": cc + 1,
+            "dataProximoConcurso": "03/06/2026",
+            "valorEstimadoProximoConcurso": 5000000,
+        }
+        c.post("/api/import-payloads?loteria=loto", json={"payloads": [payload]})
+        st = c.get("/api/status?loteria=loto").json()
+        assert st["proximo"]["concurso"] == cc + 1
+        assert st["proximo"]["data"] == "2026-06-03"
+
+
 def test_validacao_dezenas_por_loteria():
     with make_client() as c:
         sid = _login(c)

@@ -1,9 +1,19 @@
 """Métricas estatísticas avançadas de um jogo e distribuições históricas.
 
-Reúne os indicadores que os principais sites brasileiros de Mega-Sena usam
-para "caracterizar" um jogo: soma, paridade, primos, moldura/miolo do volante,
-quadrantes, dezenas consecutivas, repetição do concurso anterior, faixas,
-múltiplos de 3 e terminações.
+Reúne os indicadores que os sites brasileiros de loteria usam para
+"caracterizar" um jogo: soma, paridade, primos, moldura/miolo do volante,
+dezenas consecutivas, repetição do concurso anterior, faixas e múltiplos de 3.
+
+Tudo é parametrizado pela loteria (`cfg` de lotteries.py), porque um indicador
+que discrimina bem em "6 de 60" pode ser inútil em "15 de 25":
+
+- Na Mega (6 de 60), a *soma* e a *paridade* variam muito entre sorteios.
+- Na Lotofácil (15 de 25), quem manda é a *repetição do concurso anterior*
+  (média ~9 das 15) e o *miolo* do volante; já "consecutivos" quase não
+  discrimina, porque marcar 15 de 25 força sequências longas em todo jogo.
+
+Por isso cada loteria declara seu próprio conjunto de indicadores pontuados
+(`SCALAR_KEYS`), em vez de uma lista única.
 
 Lembrete honesto: são descrições de padrões, não previsões. Todo jogo tem
 exatamente a mesma probabilidade; os padrões só descrevem como os sorteios
@@ -12,25 +22,46 @@ costumam se distribuir.
 
 from statistics import mean, pstdev
 
-PRIMES = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59}
-FIBONACCI = {1, 2, 3, 5, 8, 13, 21, 34, 55}
+from . import lotteries
 
-# Volante 6 linhas x 10 colunas: valor v -> linha (v-1)//10, coluna (v-1)%10.
-# Moldura = borda (primeira/última linha ou coluna); miolo = o resto.
-MOLDURA = {
-    v for v in range(1, 61)
-    if (v - 1) // 10 in (0, 5) or (v - 1) % 10 in (0, 9)
+PRIMES = {
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59,
+    61, 67, 71, 73, 79, 83, 89, 97,
 }
+FIBONACCI = {1, 2, 3, 5, 8, 13, 21, 34, 55, 89}
 
 
-def _quadrante(v: int) -> int:
-    """4 quadrantes do volante (linhas 0-2/3-5 x colunas 0-4/5-9)."""
-    linha, col = (v - 1) // 10, (v - 1) % 10
-    return (0 if linha < 3 else 2) + (0 if col < 5 else 1)
+def _cfg(loteria) -> dict:
+    """Aceita o código da loteria ou a própria config."""
+    if isinstance(loteria, dict):
+        return loteria
+    return lotteries.get_loteria(loteria)
+
+
+def moldura_set(cfg: dict) -> set[int]:
+    """Dezenas na borda do volante (primeira/última linha ou coluna).
+
+    Mega: grade 6x10 → 26 dezenas na moldura. Lotofácil: 5x5 → 16."""
+    cols = cfg["cols"]
+    lin = lotteries.linhas(cfg)
+    base = cfg["min_num"]
+    out = set()
+    for v in lotteries.numbers(cfg):
+        linha, col = (v - base) // cols, (v - base) % cols
+        if linha in (0, lin - 1) or col in (0, cols - 1):
+            out.add(v)
+    return out
+
+
+def corte_baixas(cfg: dict) -> int:
+    """Limite das dezenas 'baixas' = metade do intervalo (Mega 30, Lotofácil 13)."""
+    return (cfg["min_num"] + cfg["max_num"]) // 2
 
 
 def max_consecutivos(dezenas: list[int]) -> int:
     ds = sorted(dezenas)
+    if not ds:
+        return 0
     best = run = 1
     for a, b in zip(ds, ds[1:]):
         run = run + 1 if b == a + 1 else 1
@@ -38,13 +69,13 @@ def max_consecutivos(dezenas: list[int]) -> int:
     return best
 
 
-def metrics(dezenas: list[int], anterior: list[int] | None = None) -> dict:
-    """Todos os indicadores de um único jogo."""
+def metrics(dezenas: list[int], anterior: list[int] | None = None, loteria="mega") -> dict:
+    """Todos os indicadores de um único jogo, no contexto da loteria."""
+    cfg = _cfg(loteria)
+    moldura = moldura_set(cfg)
+    corte = corte_baixas(cfg)
     ds = sorted(dezenas)
     pares = sum(1 for n in ds if n % 2 == 0)
-    quad = [0, 0, 0, 0]
-    for n in ds:
-        quad[_quadrante(n)] += 1
     return {
         "soma": sum(ds),
         "pares": pares,
@@ -52,10 +83,10 @@ def metrics(dezenas: list[int], anterior: list[int] | None = None) -> dict:
         "primos": sum(1 for n in ds if n in PRIMES),
         "fibonacci": sum(1 for n in ds if n in FIBONACCI),
         "multiplos_3": sum(1 for n in ds if n % 3 == 0),
-        "moldura": sum(1 for n in ds if n in MOLDURA),
-        "miolo": sum(1 for n in ds if n not in MOLDURA),
-        "baixas": sum(1 for n in ds if n <= 30),
-        "altas": sum(1 for n in ds if n > 30),
+        "moldura": sum(1 for n in ds if n in moldura),
+        "miolo": sum(1 for n in ds if n not in moldura),
+        "baixas": sum(1 for n in ds if n <= corte),
+        "altas": sum(1 for n in ds if n > corte),
         "consecutivos": max_consecutivos(ds),
         "terminacoes_distintas": len({n % 10 for n in ds}),
         "repetidas_anterior": (
@@ -64,28 +95,65 @@ def metrics(dezenas: list[int], anterior: list[int] | None = None) -> dict:
     }
 
 
-# Indicadores numéricos que têm "faixa típica" e entram no termômetro/filtros.
-SCALAR_KEYS = (
-    "soma",
-    "pares",
-    "primos",
-    "moldura",
-    "baixas",
-    "consecutivos",
-    "multiplos_3",
-    "repetidas_anterior",
-)
+# Indicadores pontuados (termômetro) e filtráveis, POR LOTERIA.
+#
+# Mega (6 de 60): o conjunto clássico. "consecutivos" discrimina bem, porque
+# a maioria dos sorteios não tem nenhuma sequência.
+#
+# Lotofácil (15 de 25): trocamos "consecutivos" (que é sempre alto — marcar 15
+# de 25 força sequências) por "miolo", e mantemos "repetidas_anterior" como
+# indicador de peso, já que é o padrão mais estável da modalidade.
+SCALAR_KEYS_POR_LOTERIA = {
+    "mega": (
+        "soma",
+        "pares",
+        "primos",
+        "moldura",
+        "baixas",
+        "consecutivos",
+        "multiplos_3",
+        "repetidas_anterior",
+    ),
+    "lofa": (
+        "soma",
+        "pares",
+        "primos",
+        "moldura",
+        "miolo",
+        "baixas",
+        "multiplos_3",
+        "repetidas_anterior",
+    ),
+}
+
+# Fallback para loterias que não declararem um conjunto próprio.
+SCALAR_KEYS = SCALAR_KEYS_POR_LOTERIA["mega"]
+
+
+def scalar_keys(loteria="mega") -> tuple[str, ...]:
+    cfg = _cfg(loteria)
+    return SCALAR_KEYS_POR_LOTERIA.get(cfg["code"], SCALAR_KEYS)
+
 
 LABELS = {
     "soma": "Soma das dezenas",
     "pares": "Números pares",
     "primos": "Números primos",
     "moldura": "Dezenas na moldura",
-    "baixas": "Dezenas baixas (1–30)",
+    "miolo": "Dezenas no miolo",
+    "baixas": "Dezenas baixas",
     "consecutivos": "Maior sequência consecutiva",
     "multiplos_3": "Múltiplos de 3",
     "repetidas_anterior": "Repetidas do concurso anterior",
 }
+
+
+def label(chave: str, loteria="mega") -> str:
+    """Rótulo do indicador, com o intervalo real quando ele depende da loteria."""
+    if chave == "baixas":
+        cfg = _cfg(loteria)
+        return f"Dezenas baixas ({cfg['min_num']}–{corte_baixas(cfg)})"
+    return LABELS[chave]
 
 
 def _percentile(sorted_vals: list[float], q: float) -> float:
@@ -98,15 +166,16 @@ def _percentile(sorted_vals: list[float], q: float) -> float:
     return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
 
 
-def historical_ranges(draws: list[dict]) -> dict:
+def historical_ranges(draws: list[dict], loteria="mega") -> dict:
     """Distribuições históricas de cada indicador, com faixa típica (p10–p90),
     média e desvio. Usado como default inteligente dos filtros e base do
     termômetro. `draws` em ordem crescente de concurso."""
-    series: dict[str, list[int]] = {k: [] for k in SCALAR_KEYS}
+    keys = scalar_keys(loteria)
+    series: dict[str, list[int]] = {k: [] for k in keys}
     anterior = None
     for d in draws:
-        m = metrics(d["dezenas"], anterior)
-        for k in SCALAR_KEYS:
+        m = metrics(d["dezenas"], anterior, loteria)
+        for k in keys:
             if m[k] is not None:
                 series[k].append(m[k])
         anterior = d["dezenas"]
@@ -117,7 +186,7 @@ def historical_ranges(draws: list[dict]) -> dict:
             continue
         sv = sorted(vals)
         out[k] = {
-            "label": LABELS[k],
+            "label": label(k, loteria),
             "min": sv[0],
             "max": sv[-1],
             "mean": round(mean(vals), 1),
@@ -130,18 +199,23 @@ def historical_ranges(draws: list[dict]) -> dict:
     return {"draws_considered": len(draws), "ranges": out}
 
 
-def score(dezenas: list[int], ranges: dict, anterior: list[int] | None = None) -> dict:
+def score(
+    dezenas: list[int],
+    ranges: dict,
+    anterior: list[int] | None = None,
+    loteria="mega",
+) -> dict:
     """Termômetro: nota 0–100 de quão 'dentro dos padrões' um jogo está.
 
     Para cada indicador, dá pontos cheios se cai na faixa típica (p10–p90) e
     desconta proporcionalmente à distância (em desvios-padrão) quando sai. É
     uma medida de tipicidade — não de chance de ganhar."""
     r = ranges.get("ranges", ranges)
-    m = metrics(dezenas, anterior)
+    m = metrics(dezenas, anterior, loteria)
     criterios = []
     total = 0.0
     usados = 0
-    for k in SCALAR_KEYS:
+    for k in scalar_keys(loteria):
         if k not in r or m.get(k) is None:
             continue
         info = r[k]

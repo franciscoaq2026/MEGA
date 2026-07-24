@@ -11,6 +11,8 @@ from collections import Counter
 from itertools import combinations
 from math import comb
 
+from . import lotteries
+
 NUMBERS = range(1, 61)
 
 # Valores teóricos de referência (jogo de 6 dezenas em 60)
@@ -139,10 +141,17 @@ def top_pairs(draws: list[dict], limit: int = 15, numbers=None, drawn: int = 6) 
     return {"total_draws": len(draws), "pairs": pairs, "expected_per_pair": round(expected, 2)}
 
 
-def xray(draws: list[dict], concurso: int) -> dict:
+def xray(draws: list[dict], concurso: int, loteria: str = "mega") -> dict:
     """Raio-X honesto de um sorteio: onde cada dezena sorteada estava no
     ranking de frequência e de atraso NA VÉSPERA daquele concurso — e quanto
-    as estratégias 'quentes'/'atrasadas' teriam acertado."""
+    as estratégias 'quentes'/'atrasadas' teriam acertado.
+
+    O tamanho dos conjuntos comparados (`hot6`/`overdue6`) acompanha a aposta
+    simples da loteria: 6 na Mega, 15 na Lotofácil."""
+    cfg = lotteries.get_loteria(loteria)
+    pool = lotteries.numbers(cfg)
+    escolher = cfg["escolher"]
+
     idx = next((i for i, d in enumerate(draws) if d["concurso"] == concurso), None)
     if idx is None:
         raise ValueError(f"concurso {concurso} não está no cache local")
@@ -156,14 +165,14 @@ def xray(draws: list[dict], concurso: int) -> dict:
     for d in prior:
         counts.update(d["dezenas"])
     # ranking de frequência (1 = mais sorteado até então)
-    by_freq = sorted(NUMBERS, key=lambda n: (-counts.get(n, 0), n))
+    by_freq = sorted(pool, key=lambda n: (-counts.get(n, 0), n))
     rank = {n: i + 1 for i, n in enumerate(by_freq)}
 
-    delay_info = {d["n"]: d["delay"] for d in current_delays(prior)["delays"]}
-    by_delay = sorted(NUMBERS, key=lambda n: (-delay_info[n], n))
+    delay_info = {d["n"]: d["delay"] for d in current_delays(prior, pool)["delays"]}
+    by_delay = sorted(pool, key=lambda n: (-delay_info[n], n))
 
-    hot6 = set(by_freq[:6])
-    overdue6 = set(by_delay[:6])
+    hot6 = set(by_freq[:escolher])
+    overdue6 = set(by_delay[:escolher])
     drawn = set(target["dezenas"])
 
     dezenas = [

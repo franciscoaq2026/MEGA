@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from app import analysis, generator
+from app import analysis, generator, lotteries
 
 DRAWS = [
     {"concurso": i, "data": "", "dezenas": sorted(random.Random(i).sample(range(1, 61), 6))}
@@ -21,10 +21,21 @@ def test_metrics_basico():
 
 
 def test_moldura_definicao():
-    # 1 (canto) e 10 (canto) na moldura; 22 (miolo) fora
-    assert 1 in analysis.MOLDURA and 10 in analysis.MOLDURA
-    assert 60 in analysis.MOLDURA and 51 in analysis.MOLDURA
-    assert 22 not in analysis.MOLDURA and 35 not in analysis.MOLDURA
+    # Mega: volante 6x10 — 1 e 10 (cantos de cima), 51 e 60 (cantos de baixo)
+    mega = analysis.moldura_set(lotteries.get_loteria("mega"))
+    assert 1 in mega and 10 in mega
+    assert 60 in mega and 51 in mega
+    assert 22 not in mega and 35 not in mega
+    # 2 linhas cheias (20) + 2 colunas nas 4 linhas do meio (8) = 28
+    assert len(mega) == 28
+
+
+def test_moldura_lotofacil():
+    # Lotofácil: volante 5x5 — a borda são 16 dezenas, o miolo 9 (7,8,9,12,13,14,17,18,19)
+    lofa = analysis.moldura_set(lotteries.get_loteria("lofa"))
+    assert len(lofa) == 16
+    assert {1, 5, 21, 25}.issubset(lofa)  # os quatro cantos
+    assert lofa.isdisjoint({7, 8, 9, 12, 13, 14, 17, 18, 19})  # miolo
 
 
 def test_historical_ranges_e_score():

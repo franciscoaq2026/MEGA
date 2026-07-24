@@ -22,11 +22,11 @@ def _pool(loteria: str):
 
 
 def _somente_avancada(loteria: str) -> None:
-    if not lotteries.get_loteria(loteria)["avancada"]:
+    cfg = lotteries.get_loteria(loteria)
+    if not cfg["avancada"]:
         raise HTTPException(
             409,
-            "esta análise ainda é específica da Mega-Sena; para esta loteria use "
-            "frequência e atraso.",
+            f"{cfg['nome']} ainda não tem análise avançada; use frequência e atraso.",
         )
 
 
@@ -76,6 +76,6 @@ def xray(concurso: int, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
     _somente_avancada(lot)
     try:
-        return stats.xray(_draws(lot), concurso)
+        return stats.xray(_draws(lot), concurso, lot)
     except ValueError as e:
         raise HTTPException(404, str(e)) from e

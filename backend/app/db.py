@@ -21,11 +21,11 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # onde disponíveis). Serve de fonte para o /sync quando as APIs da Caixa/guidi
 # estão inacessíveis — o caso do Vercel, cujo IP de datacenter é bloqueado.
 SEED_JSON = DATA_DIR / "seed_megasena.json"  # mantido por compatibilidade
-# Seed por loteria (histórico embutido). A Mega tem o histórico completo;
-# a Lotomania começa vazia e é populada pelo sync do navegador do usuário.
+# Seed por loteria (histórico embutido). Ambas trazem o histórico completo até
+# a data do último build; o que vier depois entra pelo /sync.
 SEED_FILES = {
     "mega": DATA_DIR / "seed_megasena.json",
-    "loto": DATA_DIR / "seed_lotomania.json",
+    "lofa": DATA_DIR / "seed_lotofacil.json",
 }
 
 TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
@@ -49,8 +49,8 @@ SCHEMA = (
         d6 INTEGER NOT NULL
     )
     """,
-    # Sorteios de qualquer loteria: dezenas guardadas como JSON (a Lotomania
-    # tem 20 números; a Mega, 6). Chave composta (loteria, concurso).
+    # Sorteios de qualquer loteria: dezenas guardadas como JSON (a Lotofácil
+    # tem 15 números; a Mega, 6). Chave composta (loteria, concurso).
     """
     CREATE TABLE IF NOT EXISTS lottery_draws (
         loteria TEXT NOT NULL,
@@ -205,7 +205,7 @@ def init_db() -> None:
     # tempo limite da função no primeiro cold start. Desligável nos testes.
     autoseed = os.environ.get("MEGASENA_AUTOSEED", "1") == "1"
     if autoseed and not USE_TURSO:
-        for loteria in ("mega", "loto"):
+        for loteria in SEED_FILES:
             if count_draws(loteria) == 0:
                 seed = load_bundled_seed(loteria)
                 if seed:

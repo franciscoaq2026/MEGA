@@ -16,10 +16,9 @@ GUIDI_API = "https://api.guidi.dev.br/loteria"
 # Espelho estático no GitHub (formato idêntico ao da Caixa), atualizado por um
 # robô/cron. É a única fonte que funciona a partir de um datacenter (Vercel),
 # já que a Caixa e a guidi bloqueiam IPs que não sejam residenciais.
-# Só a Mega tem esse espelho; para as demais loterias, só Caixa/guidi.
 MAICKON_BASES = {
     "megasena": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena",
-    "lotomania": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/lotomania",
+    "lotofacil": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/lotofacil",
 }
 
 HEADERS = {

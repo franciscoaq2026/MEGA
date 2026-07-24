@@ -189,13 +189,22 @@ def gerar(
     """Gera `jogos` apostas pela estratégia escolhida.
 
     `espalhar` faz cada novo jogo ser o candidato que MENOS se sobrepõe aos já
-    gerados. Isso não mexe na chance do prêmio principal — N apostas valem
-    N/total, sobrepostas ou não — mas aumenta a chance de pelo menos uma levar
-    algum prêmio, porque jogos parecidos ganham e perdem juntos.
+    gerados. Só considera os jogos do MESMO pedido — nunca as apostas salvas
+    pelo usuário.
 
-    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil: com 5
-    jogos, a chance de levar algo sobe de 41,98% para 46,96% (+11,8%), enquanto
-    a chance dos 15 acertos fica idêntica."""
+    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, 5 jogos:
+
+                      ganha algo   retorno médio   ganha em 2+ bilhetes
+        independente      44,65%         R$ 4,49                  7,98%
+        espalhado         47,35%         R$ 4,49                  5,45%
+
+    Ou seja: espalhar REDISTRIBUI, não aumenta. Ganha-se algo um pouco mais
+    vezes e ganha-se em vários bilhetes um pouco menos vezes; o retorno médio
+    é idêntico, porque a esperança da soma de N bilhetes é N vezes a de um,
+    independentemente da correlação entre eles. A chance do prêmio principal
+    também não muda: são N em C(total, escolher) de qualquer jeito.
+
+    É, portanto, preferência de formato — não vantagem."""
     cfg = lotteries.get_loteria(loteria)
     numbers = lotteries.numbers(cfg)
     rng = rng or random.Random()

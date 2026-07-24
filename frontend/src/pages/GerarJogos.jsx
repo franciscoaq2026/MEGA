@@ -285,11 +285,12 @@ export default function GerarJogos() {
                 <span>
                   <span className="text-zinc-800 font-medium inline-flex items-center gap-1.5">
                     Espalhar os jogos
-                    <Help text="Faz os seus bilhetes serem o mais diferentes possível entre si. Jogos parecidos ganham e perdem juntos, então espalhar aumenta a chance de pelo menos um levar prêmio. Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil: com 5 jogos, a chance de levar algo sobe cerca de 17%. NÃO muda a chance do prêmio principal, que continua sendo N em 3.268.760." />
+                    <Help text="Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, com 5 jogos: a chance de levar algo vai de 44,7% para 47,4%, e a de ganhar em dois bilhetes ao mesmo tempo cai de 8,0% para 5,5%. O RETORNO MÉDIO é idêntico nos dois casos (R$ 4,49) — os efeitos se cancelam. E a chance do prêmio principal não muda: são N em 3.268.760 de qualquer jeito. É preferência de formato, não vantagem." />
                   </span>
                   <span className="block text-xs text-zinc-500">
-                    Menos sobreposição entre os seus bilhetes: ~10% a 17% mais chance de levar
-                    algo. Não altera a chance do prêmio principal.
+                    Ganha algo com um pouco mais de frequência, e menos vezes em dois bilhetes de
+                    uma vez. O <strong>retorno médio é o mesmo</strong> — e a chance do prêmio
+                    principal também.
                   </span>
                 </span>
               </label>
@@ -372,7 +373,7 @@ export default function GerarJogos() {
                   </p>
                   {espalhar && qtdJogos > 1 && (
                     <p className="text-[11px] text-emerald-800 mt-0.5">
-                      espalhando os jogos, sobe ~10% a 17% acima disso
+                      espalhando, essa frequência sobe alguns pontos — o retorno médio não muda
                     </p>
                   )}
                 </div>

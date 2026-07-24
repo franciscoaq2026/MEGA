@@ -99,6 +99,12 @@ Todas valem para as duas loterias — o app é parametrizado por
   chance, mas evita dividir prêmio); painel de **probabilidades reais** por
   faixa, com o custo equivalente; **backtest** das estratégias contra o
   histórico.
+- **Probabilidades**: a chance exata de cada faixa para todos os tamanhos de
+  aposta que a Caixa aceita, com custo; quanto volta pelas faixas de prêmio
+  fixo; para onde vai o dinheiro apostado; e o **teste do qui-quadrado** sobre
+  o histórico, com a distribuição observada de cada indicador sobreposta à
+  teórica. É a evidência, com os dados do próprio usuário, de que não há
+  padrão a explorar.
 - **Fábrica**: filtros por indicador, termômetro de tipicidade e fechamentos
   (roda completa e reduzida, com a garantia verificada por força bruta antes
   de mostrar). Os indicadores são escolhidos por loteria — ver abaixo.
@@ -119,6 +125,28 @@ Lotofácil, que é onde a raridade se equipara.
 Na direção oposta, **repetidas do concurso anterior** é o padrão mais estável
 da Lotofácil: como 15 das 25 dezenas saem a cada sorteio, a média medida é
 exatamente 9.
+
+### O que a aba Probabilidades mostra da Lotofácil
+
+Medido sobre os 3.657 concursos do histórico embutido:
+
+- **Qui-quadrado das frequências: 24,2 com 24 graus de liberdade** (p = 0,45).
+  Sob acaso puro o valor esperado da estatística é igual aos graus de
+  liberdade — ou seja, o resultado é praticamente o do acaso perfeito. A dezena
+  mais sorteada está só 4,6% acima da média. Não existe "dezena quente".
+- **Toda distribuição observada coincide com a teórica**: pares (média 7,2),
+  primos (5,4), moldura (9,6), miolo (5,4), múltiplos de 3 (4,8), repetidas
+  do concurso anterior (9,0) e soma (195,2 contra 195 teóricos).
+- **25,67% de qualquer aposta volta pelas faixas de prêmio fixo** (R$ 7, R$ 14
+  e R$ 35 para 11, 12 e 13 acertos). Essa fração é constante de 15 a 20
+  dezenas, porque uma aposta de k dezenas é exatamente C(k,15) apostas simples.
+- **Chance de ganhar alguma coisa**: 1 em 9,4 com 15 dezenas; 1 em 1,7 com 18;
+  1 em 1,06 com 20 — que custa R$ 54.264,00.
+
+O veredito do teste tem três níveis e é deliberadamente cauteloso: um teste a
+5% "reprova" 1 de cada 20 históricos honestos, então um p entre 0,01 e 0,05
+é reportado como flutuação normal, não como viés. A Mega-Sena cai justamente
+nesse caso (p = 0,03) — e a tela explica por que isso não é evidência de nada.
 
 ## Deploy (Vercel + Turso)
 

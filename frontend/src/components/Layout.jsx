@@ -7,6 +7,7 @@ const PAGES = [
   { sub: '', label: 'Início', end: true },
   { sub: 'sorteios', label: 'Sorteios' },
   { sub: 'estatisticas', label: 'Estatísticas' },
+  { sub: 'probabilidades', label: 'Probabilidades' },
   { sub: 'gerar', label: 'Gerar jogos' },
   { sub: 'fabrica', label: 'Fábrica', onlyAvancada: true },
   { sub: 'meus-jogos', label: 'Meus jogos' },
@@ -77,8 +78,12 @@ function Shell() {
 export default function Layout() {
   const { loteria } = useParams()
   if (!isValidLoteria(loteria)) return <Navigate to="/" replace />
+  // `key` força a remontagem de toda a subárvore ao trocar de loteria. Sem
+  // ela, navegar direto de /lofa/algo para /mega/algo mantém o mesmo
+  // componente montado: os efeitos com dependências vazias não rodam de novo
+  // e a tela segue exibindo os dados da loteria anterior.
   return (
-    <LotteryProvider code={loteria}>
+    <LotteryProvider key={loteria} code={loteria}>
       <Shell />
     </LotteryProvider>
   )

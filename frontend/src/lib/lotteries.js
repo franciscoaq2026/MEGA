@@ -23,6 +23,9 @@ export const LOTERIAS = {
     accent: 'emerald',
     cardClass: 'hover:border-emerald-400',
     badgeClass: 'bg-emerald-600',
+    barClass: 'bg-emerald-500',
+    rowClass: 'bg-emerald-50/50',
+    tintClass: 'bg-emerald-50 border-emerald-200',
     // Faixas premiadas: acertos -> rótulo do prêmio
     premios: [
       { ac: 6, label: 'Sena' },
@@ -50,6 +53,9 @@ export const LOTERIAS = {
     accent: 'purple',
     cardClass: 'hover:border-purple-400',
     badgeClass: 'bg-purple-600',
+    barClass: 'bg-purple-500',
+    rowClass: 'bg-purple-50/50',
+    tintClass: 'bg-purple-50 border-purple-200',
     // 11, 12 e 13 acertos têm prêmio FIXO — não dependem do rateio.
     premios: [
       { ac: 15, label: '15 acertos' },

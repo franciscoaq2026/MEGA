@@ -403,3 +403,64 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
         "preco_simples": preco,
         "faixas": faixas,
     }
+
+
+def _bilhetes_premiados(k: int, acertos: int, cfg: dict) -> float:
+    """Nº médio de apostas simples, dentro de uma aposta de k dezenas, que
+    fazem exatamente `acertos`.
+
+    Uma aposta de k dezenas contém C(k, escolher) apostas simples. Se j das
+    dezenas sorteadas caem entre as suas k, o número de apostas com exatamente
+    `acertos` é C(j, acertos) x C(k-j, escolher-acertos). Somamos isso sobre
+    todos os j, ponderado pela probabilidade de cada j."""
+    total, sorteadas, escolher = cfg["total"], cfg["sorteadas"], cfg["escolher"]
+    denom = comb(total, k)
+    esperado = 0.0
+    for j in range(acertos, min(sorteadas, k) + 1):
+        if k - j < 0 or total - sorteadas < k - j:
+            continue
+        p = comb(sorteadas, j) * comb(total - sorteadas, k - j) / denom
+        esperado += p * comb(j, acertos) * comb(k - j, escolher - acertos)
+    return esperado
+
+
+def odds_table(loteria: str = "mega") -> dict:
+    """Tabela completa: para cada tamanho de aposta aceito pela Caixa, a chance
+    de cada faixa, o custo, a chance de ganhar ALGUMA coisa e — onde a loteria
+    tem prêmios fixos — quanto volta em média só por eles.
+
+    O retorno fixo é uma constante da modalidade: como uma aposta de k dezenas
+    é exatamente C(k, escolher) apostas simples, a fração que volta pelas
+    faixas de valor fixo não muda com o tamanho da aposta."""
+    cfg = lotteries.get_loteria(loteria)
+    fixos = cfg.get("premios_fixos") or {}
+    preco = cfg["preco"]
+    linhas = []
+    for k in range(cfg["escolher"], cfg["max_escolher"] + 1):
+        o = odds(k, preco, loteria)
+        qualquer = sum(f["prob"] for f in o["faixas"].values())
+        retorno_fixo = sum(_bilhetes_premiados(k, ac, cfg) * val for ac, val in fixos.items())
+        linhas.append(
+            {
+                **o,
+                "qualquer": {
+                    "prob": qualquer,
+                    "one_in": round(1 / qualquer, 2) if qualquer else None,
+                    "pct": round(100 * qualquer, 2),
+                },
+                "retorno_fixo": {
+                    "valor": round(retorno_fixo, 2),
+                    "pct": round(100 * retorno_fixo / o["custo_estimado"], 2)
+                    if o["custo_estimado"]
+                    else 0.0,
+                },
+            }
+        )
+    return {
+        "loteria": cfg["code"],
+        "nome": cfg["nome"],
+        "preco_simples": preco,
+        "premios_fixos": fixos,
+        "rateio": cfg.get("rateio", {}),
+        "linhas": linhas,
+    }

@@ -123,6 +123,14 @@ def odds(
     return generator.odds(k, preco_simples, lot)
 
 
+@router.get("/odds/table")
+def odds_table(loteria: str | None = Query(default=None)):
+    """Tabela completa de probabilidades: todos os tamanhos de aposta que a
+    Caixa aceita, com custo, chance por faixa, chance de ganhar alguma coisa e
+    o retorno garantido pelas faixas de prêmio fixo."""
+    return generator.odds_table(_lot(loteria))
+
+
 # ---- Fábrica de números: estatísticas avançadas, gerador, termômetro, fechamento ----
 
 

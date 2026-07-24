@@ -5,6 +5,7 @@ import Hub from './pages/Hub.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Sorteios from './pages/Sorteios.jsx'
 import GerarJogos from './pages/GerarJogos.jsx'
+import Probabilidades from './pages/Probabilidades.jsx'
 import Fabrica from './pages/Fabrica.jsx'
 import MeusJogos from './pages/MeusJogos.jsx'
 
@@ -31,6 +32,7 @@ export default function App() {
             </Suspense>
           }
         />
+        <Route path="probabilidades" element={<Probabilidades />} />
         <Route path="gerar" element={<GerarJogos />} />
         <Route path="fabrica" element={<Fabrica />} />
         <Route path="meus-jogos" element={<MeusJogos />} />

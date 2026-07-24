@@ -339,6 +339,89 @@ def test_fechamento_lotofacil():
         assert r.status_code == 400
 
 
+def test_odds_table_lotofacil():
+    """Tabela mestra da aba Probabilidades, com os números oficiais da Caixa."""
+    with make_client() as c:
+        t = c.get("/api/odds/table?loteria=lofa")
+        assert t.status_code == 200, t.text
+        body = t.json()
+        assert body["premios_fixos"] == {"11": 7.0, "12": 14.0, "13": 35.0}
+        linhas = {l["dezenas"]: l for l in body["linhas"]}
+        assert set(linhas) == {15, 16, 17, 18, 19, 20}
+
+        # aposta simples
+        simples = linhas[15]
+        assert simples["combos_simples"] == 1 and simples["custo_estimado"] == 3.50
+        assert simples["faixas"]["15 acertos"]["one_in"] == 3_268_760
+        assert simples["qualquer"]["one_in"] == 9.44  # ganhar alguma faixa
+
+        # 20 dezenas: C(20,15) = 15.504 apostas -> R$ 54.264,00
+        assert linhas[20]["combos_simples"] == 15_504
+        assert linhas[20]["custo_estimado"] == 54_264.00
+
+        # O retorno das faixas FIXAS é constante: uma aposta de k dezenas é
+        # exatamente C(k,15) apostas simples, então a fração não muda.
+        pcts = {l["retorno_fixo"]["pct"] for l in body["linhas"]}
+        assert len(pcts) == 1, f"retorno fixo deveria ser constante, veio {pcts}"
+        assert abs(pcts.pop() - 25.67) < 0.01
+
+        # A Mega não tem prêmio fixo — tudo é rateio.
+        mega = c.get("/api/odds/table?loteria=mega").json()
+        assert mega["premios_fixos"] == {}
+        assert all(l["retorno_fixo"]["valor"] == 0 for l in mega["linhas"])
+
+
+def test_aleatoriedade_lotofacil():
+    with make_client() as c:
+        # 60 sorteios sintéticos só para o endpoint responder
+        db.upsert_draws(
+            [{"concurso": 992000 + i, "data": "2026-01-01",
+              "dezenas": sorted(((n * 7 + i) % 25) + 1 for n in range(15))}
+             for i in range(60)],
+            "lofa",
+        )
+        r = c.get("/api/stats/aleatoriedade?loteria=lofa")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        cs = body["chi_square"]
+        # 25 dezenas -> 24 graus de liberdade; crítico de 5% ≈ 36,4 (tabela)
+        assert cs["graus_liberdade"] == 24
+        assert abs(cs["critico_5pct"] - 36.4) < 0.1
+        assert cs["nivel"] in ("ok", "limite", "atipico")
+        assert 0.0 <= cs["p_valor"] <= 1.0
+        assert len(cs["freq"]) == 25
+
+        # indicadores trazem observado e teórico
+        chaves = {i["chave"] for i in body["indicadores"]}
+        assert {"pares", "moldura", "miolo", "repetidas_anterior"}.issubset(chaves)
+        # média teórica de "repetidas" na Lotofácil: 15*15/25 = 9
+        rep = next(i for i in body["indicadores"] if i["chave"] == "repetidas_anterior")
+        assert rep["media_teorica"] == 9.0
+        # soma teórica: 15 * (1+25)/2 = 195
+        assert body["soma"]["media_teorica"] == 195.0
+
+
+def test_chi2_critico_bate_com_a_tabela():
+    """A aproximação de Wilson–Hilferty precisa bater com a tabela publicada."""
+    from app import stats
+
+    assert abs(stats._chi2_critico(24) - 36.415) < 0.05   # Lotofácil (25 dezenas)
+    assert abs(stats._chi2_critico(59) - 77.931) < 0.05   # Mega (60 dezenas)
+    assert abs(stats._chi2_critico(9) - 16.919) < 0.05
+
+
+def test_chi2_p_valor_conhecido():
+    """p-valor conferido contra valores de referência do qui-quadrado."""
+    from app import stats
+
+    # chi2 igual aos graus de liberdade -> p perto de 0,45 para gl=24
+    assert abs(stats._gamma_q(24 / 2, 24 / 2) - 0.4562) < 0.01
+    # mediana: chi2 = 23,337 com gl=24 -> p = 0,50
+    assert abs(stats._gamma_q(24 / 2, 23.337 / 2) - 0.50) < 0.01
+    # cauda: chi2 = 36,415 com gl=24 -> p = 0,05
+    assert abs(stats._gamma_q(24 / 2, 36.415 / 2) - 0.05) < 0.005
+
+
 def test_config_endpoint():
     with make_client() as c:
         cfg = c.get("/api/config?loteria=lofa").json()

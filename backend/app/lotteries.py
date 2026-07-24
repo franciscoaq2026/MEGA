@@ -33,6 +33,15 @@ LOTERIAS: dict[str, dict] = {
         "cols": 10,            # grade 6x10
         "preco": 6.00,
         "avancada": True,      # tem "Fábrica"/termômetro calibrados
+        # Faixas de valor FIXO em regulamento (a Mega não tem: tudo é rateio).
+        "premios_fixos": {},
+        # Como a premiação é repartida. pool_pct = fatia da arrecadação que
+        # volta como prêmio; o resto é repasse social e custeio (Lei 13.756/2018).
+        "rateio": {
+            "pool_pct": 43.35,
+            "faixas": {6: 35.0, 5: 19.0, 4: 19.0},
+            "reservas": {"acumulado final 5": 22.0, "Mega da Virada": 5.0},
+        },
         "max_roda_completa": 11,   # C(11,6) = 462 jogos
         "max_reduzida": 15,        # C(15,6) = 5.005 combinações a cobrir
         # A partir de quantos consecutivos o jogo vira "desenho no volante"
@@ -55,6 +64,15 @@ LOTERIAS: dict[str, dict] = {
         "cols": 5,             # grade 5x5
         "preco": 3.50,
         "avancada": True,
+        # Valores fixos em regulamento — não dependem de rateio nem de quantos
+        # ganhadores houve. Equivalem a 2x, 4x e 10x o preço da aposta.
+        "premios_fixos": {11: 7.00, 12: 14.00, 13: 35.00},
+        "rateio": {
+            "pool_pct": 43.79,
+            # percentuais do que sobra DEPOIS de pagas as faixas fixas
+            "faixas": {15: 62.0, 14: 13.0},
+            "reservas": {"concursos de final 0": 10.0, "Lotofácil da Independência": 15.0},
+        },
         "max_roda_completa": 17,   # C(17,15) = 136 jogos
         "max_reduzida": 18,        # C(18,15) = 816 combinações a cobrir
         # Marcar 15 de 25 SEMPRE gera sequências — não cabem 15 dezenas em 25

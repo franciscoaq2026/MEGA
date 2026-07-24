@@ -71,6 +71,22 @@ def pairs(
     return stats.top_pairs(_draws(lot), limit, numbers=numbers, drawn=drawn)
 
 
+@router.get("/aleatoriedade")
+def aleatoriedade(loteria: str | None = Query(default=None)):
+    """Teste de aleatoriedade: qui-quadrado das frequências + distribuição
+    observada de cada indicador contra a teórica. É a evidência, com os dados
+    do próprio usuário, de que não há padrão a explorar."""
+    lot = _lot(loteria)
+    draws = _draws(lot)
+    try:
+        return {
+            "chi_square": stats.chi_square_frequencias(draws, lot),
+            **stats.indicadores_vs_teoria(draws, lot),
+        }
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @router.get("/xray/{concurso}")
 def xray(concurso: int, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)

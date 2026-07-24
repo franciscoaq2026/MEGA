@@ -371,6 +371,75 @@ def test_odds_table_lotofacil():
         assert all(l["retorno_fixo"]["valor"] == 0 for l in mega["linhas"])
 
 
+def test_odds_carteira_apostas_separadas():
+    """N bilhetes simples separados: P = 1 - (1-p)^N por faixa."""
+    with make_client() as c:
+        um = c.get("/api/odds/carteira?loteria=lofa&jogos=1").json()
+        assert um["custo_estimado"] == 3.50
+        assert um["faixas"]["15 acertos"]["one_in"] == 3_268_760
+        assert abs(um["qualquer"]["pct"] - 10.59) < 0.01
+
+        dez = c.get("/api/odds/carteira?loteria=lofa&jogos=16").json()
+        assert dez["custo_estimado"] == 56.00
+        # 16 bilhetes -> 16x a chance do prêmio principal
+        assert dez["faixas"]["15 acertos"]["one_in"] == round(3_268_760 / 16)
+        # ...e MUITO mais chance de levar algo do que 1 aposta de 16 dezenas
+        multipla = next(
+            l for l in c.get("/api/odds/table?loteria=lofa").json()["linhas"]
+            if l["dezenas"] == 16
+        )
+        assert multipla["custo_estimado"] == dez["custo_estimado"]
+        assert multipla["faixas"]["15 acertos"]["one_in"] == dez["faixas"]["15 acertos"]["one_in"]
+        assert dez["qualquer"]["pct"] > 3 * multipla["qualquer"]["pct"]
+
+
+def test_espalhar_reduz_sobreposicao_sem_mudar_a_chance():
+    """Espalhar afasta os bilhetes entre si; a chance do prêmio principal é
+    função só da QUANTIDADE de bilhetes, então não pode mudar."""
+    import itertools
+    import random
+
+    from app import generator
+
+    def maior_sobreposicao(jogos):
+        ds = [set(j["dezenas"]) for j in jogos]
+        return max(len(a & b) for a, b in itertools.combinations(ds, 2))
+
+    piores_esp, piores_ind = [], []
+    for s in range(6):
+        esp = generator.gerar([], "aleatorio", 6, 15, rng=random.Random(s),
+                              loteria="lofa", espalhar=True)
+        ind = generator.gerar([], "aleatorio", 6, 15, rng=random.Random(s),
+                              loteria="lofa", espalhar=False)
+        assert len({tuple(j["dezenas"]) for j in esp}) == 6  # sem repetidos
+        assert all(len(j["dezenas"]) == 15 for j in esp)
+        piores_esp.append(maior_sobreposicao(esp))
+        piores_ind.append(maior_sobreposicao(ind))
+    assert sum(piores_esp) < sum(piores_ind), (piores_esp, piores_ind)
+
+    # A chance do prêmio principal depende só de quantos bilhetes: idêntica.
+    for n in (1, 5, 16):
+        assert (
+            generator.odds_carteira(n, "lofa")["faixas"]["15 acertos"]["one_in"]
+            == round(3_268_760 / n)
+        )
+
+
+def test_generate_espalhar_via_api():
+    with make_client() as c:
+        r = c.post("/api/generate?loteria=lofa",
+                   json={"estrategia": "aleatorio", "jogos": 5, "espalhar": True})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["espalhar"] is True
+        assert body["carteira"]["jogos"] == 5
+        # numa aposta múltipla não há o que espalhar: é um bilhete só
+        m = c.post("/api/generate?loteria=lofa",
+                   json={"estrategia": "aleatorio", "jogos": 1, "dezenas": 18,
+                         "espalhar": True}).json()
+        assert m["espalhar"] is False and m["carteira"] is None
+
+
 def test_garantia_minima_casa_dos_pombos():
     """k dezenas garantem k + sorteadas - total acertos, sem depender de sorte."""
     from app import generator

@@ -54,6 +54,9 @@ class GenerateRequest(BaseModel):
     jogos: int = Field(1, ge=1, le=20)
     dezenas: int = Field(0, ge=0, le=50)  # 0 = aposta simples da loteria
     anti_rateio: bool = False
+    # Espalha os jogos (menor sobreposição entre eles). Só faz sentido em
+    # apostas simples separadas — numa aposta múltipla há um bilhete só.
+    espalhar: bool = True
 
 
 @router.get("/strategies")
@@ -95,15 +98,32 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
             "cache vazio: sincronize os sorteios para usar estratégias baseadas no histórico "
             "(o aleatório puro funciona sem histórico)",
         )
-    jogos = generator.gerar(draws, req.estrategia, req.jogos, dezenas, req.anti_rateio, loteria=lot)
+    # Espalhar só tem efeito entre bilhetes distintos do mesmo tamanho da
+    # aposta simples; numa aposta múltipla o usuário compra um bilhete só.
+    espalhar = req.espalhar and req.jogos > 1 and dezenas == cfg["escolher"]
+    jogos = generator.gerar(
+        draws, req.estrategia, req.jogos, dezenas, req.anti_rateio,
+        loteria=lot, espalhar=espalhar,
+    )
     return {
         "estrategia": req.estrategia,
         "descricao": generator.ESTRATEGIAS[req.estrategia],
         "anti_rateio": req.anti_rateio,
+        "espalhar": espalhar,
         "dezenas": dezenas,
         "jogos": jogos,
+        "carteira": generator.odds_carteira(req.jogos, lot) if dezenas == cfg["escolher"] else None,
         "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
     }
+
+
+@router.get("/odds/carteira")
+def odds_carteira(
+    jogos: int = Query(1, ge=1, le=100000),
+    loteria: str | None = Query(default=None),
+):
+    """Chance acumulada de N apostas simples separadas (1 - (1-p)^N)."""
+    return generator.odds_carteira(jogos, _lot(loteria))
 
 
 @router.get("/odds")

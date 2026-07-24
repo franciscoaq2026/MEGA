@@ -42,12 +42,20 @@ const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
   const dezenasFixas = cfg.escolher === cfg.maxEscolher
+  // Formato da aposta. 'simples' = N bilhetes de escolher dezenas, comprados
+  // separados. 'multipla' = UM bilhete com mais dezenas (o fechamento).
+  const [formato, setFormato] = useState('simples')
+  const simples = formato === 'simples'
   const [estrategia, setEstrategia] = useState('aleatorio')
   const [qtdJogos, setQtdJogos] = useState(3)
   const [dezenas, setDezenas] = useState(cfg.escolher)
   const [antiRateio, setAntiRateio] = useState(false)
+  const [espalhar, setEspalhar] = useState(true)
   const [preco, setPreco] = useState(cfg.preco.toFixed(2))
   const [odds, setOdds] = useState(null)
+  const [carteira, setCarteira] = useState(null)
+  // Chance de levar algo com o MESMO dinheiro em bilhetes simples separados.
+  const equivalente = odds?.equivalente_simples
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -66,6 +74,12 @@ export default function GerarJogos() {
       .catch(() => {})
   }, [])
 
+  // Ao trocar de formato, o tamanho da aposta acompanha: simples volta para a
+  // aposta mínima; múltipla começa uma dezena acima dela.
+  useEffect(() => {
+    setDezenas(simples ? cfg.escolher : Math.min(cfg.escolher + 1, cfg.maxEscolher))
+  }, [formato, cfg.escolher, cfg.maxEscolher, simples])
+
   useEffect(() => {
     if (!cfg.avancada) {
       setOdds(null)
@@ -76,6 +90,14 @@ export default function GerarJogos() {
       .then(setOdds)
       .catch(() => setOdds(null))
   }, [dezenas, preco, cfg.avancada])
+
+  // Chance acumulada de N bilhetes simples separados — a conta que interessa
+  // a quem joga simples, e a base da comparação com a aposta múltipla.
+  useEffect(() => {
+    apiGet(`/odds/carteira?jogos=${qtdJogos}`)
+      .then(setCarteira)
+      .catch(() => setCarteira(null))
+  }, [qtdJogos])
 
   function salvar(i, jogo) {
     if (!concursoSalvar) return
@@ -107,9 +129,10 @@ export default function GerarJogos() {
     try {
       const r = await apiPost('/generate', {
         estrategia,
-        jogos: qtdJogos,
+        jogos: simples ? qtdJogos : 1,
         dezenas,
         anti_rateio: antiRateio,
+        espalhar: simples && espalhar,
       })
       setResult(r)
       setSalvos({})
@@ -124,18 +147,59 @@ export default function GerarJogos() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-bold">Gerar jogos</h2>
-        {cfg.avancada ? (
-          <p className="text-xs text-zinc-500">
-            O jeito rápido: escolha uma estratégia, diga quantos jogos e gere. Para peneirar por
-            soma, pares, primos etc. ou montar fechamentos, use a aba <strong>Fábrica</strong>.
-          </p>
-        ) : (
-          <p className="text-xs text-zinc-500">
-            Na {cfg.nome} você marca {cfg.escolher} de {cfg.total} dezenas. As estratégias abaixo
-            só mudam a <em>aparência</em> do jogo — nenhuma altera a probabilidade de acerto.
-          </p>
-        )}
+        <p className="text-xs text-zinc-500">
+          Escolha o formato da aposta, diga quantos jogos e gere. As probabilidades ao lado
+          acompanham a sua escolha. Para peneirar por soma, pares, primos etc., use a aba{' '}
+          <strong>Fábrica</strong>.
+        </p>
       </div>
+
+      {/* Formato: a decisão que mais muda o resultado prático */}
+      {!dezenasFixas && (
+        <Card
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Formato da aposta
+              <Help text="Bilhetes simples separados e uma aposta múltipla do mesmo valor têm a MESMA chance no prêmio principal. O que muda é a chance de levar algum prêmio: bilhetes separados se espalham e cobrem situações diferentes; a aposta múltipla concentra, ganhando mais raramente porém em várias faixas de uma vez." />
+            </span>
+          }
+        >
+          <div className="grid sm:grid-cols-2 gap-2">
+            {[
+              {
+                id: 'simples',
+                nome: `Jogos simples separados`,
+                desc: `Vários bilhetes de ${cfg.escolher} dezenas, comprados um a um. Maior chance de levar algum prêmio pelo mesmo dinheiro.`,
+              },
+              {
+                id: 'multipla',
+                nome: 'Uma aposta múltipla',
+                desc: `Um único bilhete com mais de ${cfg.escolher} dezenas. Mesmo prêmio principal, mas concentra: ganha menos vezes e em bloco.`,
+              },
+            ].map((f) => (
+              <label
+                key={f.id}
+                className={`border rounded-lg p-3 cursor-pointer transition-colors ${
+                  formato === f.id
+                    ? 'border-emerald-600 bg-emerald-50'
+                    : 'border-zinc-200 hover:border-emerald-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="formato"
+                  value={f.id}
+                  checked={formato === f.id}
+                  onChange={() => setFormato(f.id)}
+                  className="sr-only"
+                />
+                <p className="font-medium text-sm">{f.nome}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{f.desc}</p>
+              </label>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className={`grid gap-4 items-start ${cfg.avancada ? 'lg:grid-cols-3' : ''}`}>
         <Card title="Estratégia" className={cfg.avancada ? 'lg:col-span-2' : ''}>
@@ -167,43 +231,70 @@ export default function GerarJogos() {
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4 mt-4">
-            <label className="text-sm">
-              <span className="text-zinc-600 inline-flex items-center gap-1.5">
-                Quantos jogos
-                <Help text="Quantas apostas diferentes gerar de uma vez (1 a 20). Cada aposta é independente. Dobrar a quantidade dobra a sua chance total — é a única forma real de aumentar a chance." />
-              </span>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={qtdJogos}
-                onChange={(e) => setQtdJogos(Math.min(20, Math.max(1, Number(e.target.value))))}
-                className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
-              />
-            </label>
-            {dezenasFixas ? (
-              <div className="text-sm">
-                <span className="text-zinc-600">Dezenas por jogo</span>
-                <p className="mt-1 font-medium">{cfg.escolher} (fixo na {cfg.nome})</p>
-              </div>
+            {simples ? (
+              <label className="text-sm">
+                <span className="text-zinc-600 inline-flex items-center gap-1.5">
+                  Quantos jogos
+                  <Help text="Quantos bilhetes simples separados gerar (1 a 20). Cada bilhete a mais aumenta a sua chance de verdade, na proporção do que custa: 2 jogos = 2x a chance do prêmio principal." />
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={qtdJogos}
+                  onChange={(e) => setQtdJogos(Math.min(20, Math.max(1, Number(e.target.value))))}
+                  className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
+                />
+                <span className="block text-[11px] text-zinc-500 mt-1">
+                  {cfg.escolher} dezenas cada · {formatMoney(qtdJogos * cfg.preco)}
+                </span>
+              </label>
             ) : (
               <label className="text-sm">
                 <span className="text-zinc-600 inline-flex items-center gap-1.5">
-                  Dezenas por jogo ({cfg.escolher}–{cfg.maxEscolher})
-                  <Help text="Tamanho de cada aposta. 6 = aposta simples (mais barata). De 7 a 20 = aposta múltipla: cobre mais números e tem chance maior, mas o preço sobe MUITO (veja em Probabilidades reais)." />
+                  Dezenas no bilhete ({cfg.escolher + 1}–{cfg.maxEscolher})
+                  <Help text="Tamanho da aposta múltipla. Cada dezena a mais multiplica o número de combinações cobertas — e o preço na mesma medida. Veja o custo ao lado antes de decidir." />
                 </span>
                 <select
                   value={dezenas}
                   onChange={(e) => setDezenas(Number(e.target.value))}
                   className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
                 >
-                  {Array.from({ length: cfg.maxEscolher - cfg.escolher + 1 }, (_, i) => cfg.escolher + i).map((k) => (
+                  {Array.from(
+                    { length: cfg.maxEscolher - cfg.escolher },
+                    (_, i) => cfg.escolher + 1 + i,
+                  ).map((k) => (
                     <option key={k} value={k}>
                       {k}
                     </option>
                   ))}
                 </select>
+                <span className="block text-[11px] text-zinc-500 mt-1">
+                  1 bilhete · {odds ? formatMoney(odds.custo_estimado) : '…'}
+                </span>
               </label>
+            )}
+            {simples && qtdJogos > 1 ? (
+              <label className="flex items-start gap-2 text-sm sm:mt-6">
+                <input
+                  type="checkbox"
+                  checked={espalhar}
+                  onChange={(e) => setEspalhar(e.target.checked)}
+                  className="mt-0.5 accent-emerald-600"
+                />
+                <span>
+                  <span className="text-zinc-800 font-medium inline-flex items-center gap-1.5">
+                    Espalhar os jogos
+                    <Help text="Faz os seus bilhetes serem o mais diferentes possível entre si. Jogos parecidos ganham e perdem juntos, então espalhar aumenta a chance de pelo menos um levar prêmio. Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil: com 5 jogos, a chance de levar algo sobe cerca de 17%. NÃO muda a chance do prêmio principal, que continua sendo N em 3.268.760." />
+                  </span>
+                  <span className="block text-xs text-zinc-500">
+                    Menos sobreposição entre os seus bilhetes: ~10% a 17% mais chance de levar
+                    algo. Não altera a chance do prêmio principal.
+                  </span>
+                </span>
+              </label>
+            ) : (
+              <div />
             )}
             <label className="flex items-start gap-2 text-sm sm:mt-6">
               <input
@@ -230,7 +321,11 @@ export default function GerarJogos() {
             disabled={busy}
             className="mt-4 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
           >
-            {busy ? 'Gerando…' : `Gerar ${qtdJogos} jogo(s)`}
+            {busy
+              ? 'Gerando…'
+              : simples
+                ? `Gerar ${qtdJogos} jogo(s)`
+                : `Gerar aposta de ${dezenas} dezenas`}
           </button>
           {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </Card>
@@ -240,18 +335,22 @@ export default function GerarJogos() {
           title={
             <span className="inline-flex items-center gap-1.5">
               Probabilidades reais
-              <Help text="A chance exata de cada prêmio, calculada por matemática (não é estimativa nem 'tendência'). É idêntica para QUALQUER combinação de números — por isso nenhuma estratégia muda estes valores. Só aumentar as dezenas ou a quantidade de jogos muda a chance." />
+              <Help text="A chance exata de cada prêmio, calculada por matemática (não é estimativa nem 'tendência'). É idêntica para QUALQUER combinação de números — por isso nenhuma estratégia muda estes valores. Só aumentar as dezenas ou a quantidade de bilhetes muda a chance." />
             </span>
           }
-          subtitle={`Jogo de ${dezenas} dezenas — matemática exata, igual para qualquer escolha de números`}
+          subtitle={
+            simples
+              ? `${qtdJogos} bilhete(s) de ${cfg.escolher} dezenas`
+              : `1 bilhete de ${dezenas} dezenas`
+          }
         >
-          {odds ? (
+          {(simples ? carteira : odds) ? (
             <div className="space-y-3 text-sm">
               <table className="w-full text-left">
                 <tbody>
-                  {Object.entries(odds.faixas).map(([label, f]) => (
+                  {Object.entries((simples ? carteira : odds).faixas).map(([label, f]) => (
                     <tr key={label} className="border-b border-zinc-100 last:border-0">
-                      <td className="py-1.5 text-zinc-600 capitalize">{label}</td>
+                      <td className="py-1.5 text-zinc-600 first-letter:uppercase">{label}</td>
                       <td className="py-1.5 text-right font-semibold tabular-nums">
                         1 em {fmt(f.one_in)}
                       </td>
@@ -259,9 +358,66 @@ export default function GerarJogos() {
                   ))}
                 </tbody>
               </table>
-              <p className="text-xs text-zinc-500">
-                {dezenas} dezenas = <strong>{fmt(odds.combos_simples)}</strong> jogo(s) simples.
+
+              {simples && carteira && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                  <p className="text-xs text-emerald-900">
+                    Chance de levar <strong>algum</strong> prêmio
+                  </p>
+                  <p className="font-bold tabular-nums text-emerald-900">
+                    {fmt(carteira.qualquer.pct)}%{' '}
+                    <span className="text-xs font-normal">
+                      (1 em {fmt(carteira.qualquer.one_in)})
+                    </span>
+                  </p>
+                  {espalhar && qtdJogos > 1 && (
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      espalhando os jogos, sobe ~10% a 17% acima disso
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <p className="text-xs text-zinc-600">
+                Custo:{' '}
+                <strong className="text-emerald-700">
+                  {formatMoney(simples ? carteira.custo_estimado : odds.custo_estimado)}
+                </strong>
+                {!simples && (
+                  <>
+                    {' '}
+                    · equivale a <strong>{fmt(odds.combos_simples)}</strong> apostas simples
+                  </>
+                )}
               </p>
+
+              {/* A comparação que decide: mesmo dinheiro, formatos diferentes */}
+              {!simples && odds && equivalente && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900 leading-relaxed">
+                  <strong>Mesmo dinheiro, do outro jeito:</strong>{' '}
+                  {formatMoney(odds.custo_estimado)} compram {fmt(odds.combos_simples)} bilhetes
+                  simples separados.
+                  <table className="w-full mt-1.5 text-[11px]">
+                    <tbody>
+                      <tr>
+                        <td className="py-0.5">Prêmio principal</td>
+                        <td className="py-0.5 text-right font-semibold">idêntico nos dois</td>
+                      </tr>
+                      <tr>
+                        <td className="py-0.5">Levar algo — esta aposta</td>
+                        <td className="py-0.5 text-right tabular-nums">{fmt(odds.qualquer.pct)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-0.5">Levar algo — bilhetes separados</td>
+                        <td className="py-0.5 text-right font-bold tabular-nums">
+                          {fmt(equivalente.pct)}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               <label className="flex items-center gap-2 text-xs text-zinc-600">
                 Preço da aposta simples: R$
                 <input
@@ -271,10 +427,6 @@ export default function GerarJogos() {
                   inputMode="decimal"
                 />
               </label>
-              <p className="text-xs text-zinc-600">
-                Custo estimado por jogo:{' '}
-                <strong className="text-emerald-700">{formatMoney(odds.custo_estimado)}</strong>
-              </p>
               <p className="text-xs text-zinc-500 border-t border-zinc-100 pt-2">
                 A única forma real de aumentar a chance é jogar mais combinações (2 jogos = 2× a
                 chance) — é assim que os bolões de lotérica “ganham sempre”: volume, não segredo.

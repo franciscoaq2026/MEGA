@@ -58,6 +58,19 @@ function Shell() {
                 {label}
               </NavLink>
             ))}
+            {/* Fora do prefixo da loteria: compara TODAS as modalidades da Caixa */}
+            <NavLink
+              to="/comparar"
+              className={({ isActive }) =>
+                `whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  isActive
+                    ? 'border-emerald-600 text-emerald-700'
+                    : 'border-transparent text-zinc-400 hover:text-zinc-800'
+                }`
+              }
+            >
+              Comparar
+            </NavLink>
           </nav>
         </div>
       </header>

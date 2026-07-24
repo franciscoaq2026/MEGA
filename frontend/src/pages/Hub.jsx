@@ -89,6 +89,12 @@ export default function Hub() {
             Mega-Sena é o contrário: quase nunca paga, e quando paga muda a vida. Jogar uma de cada
             cobre as duas pontas. Nenhuma escolha de números altera a matemática de fundo.
           </p>
+          <Link
+            to="/comparar"
+            className="inline-block mt-3 text-sm font-medium text-emerald-700 hover:underline"
+          >
+            Ver as 11 modalidades da Caixa comparadas →
+          </Link>
         </div>
 
         <p className="text-xs text-zinc-500">

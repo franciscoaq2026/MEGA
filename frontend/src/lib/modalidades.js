@@ -11,7 +11,12 @@
 //
 // Preços: tabela vigente após o reajuste de 09/07/2025 (Super Sete em 30/07/2025).
 
-/** Probabilidade de levar QUALQUER faixa de prêmio, somando todas as faixas. */
+/** Probabilidade de levar QUALQUER faixa de prêmio, somando todas as faixas.
+ *
+ * Soma as faixas já arredondadas ("1 em 2.332"), então o resultado pode cair
+ * 1 unidade abaixo do valor calculado direto da hipergeométrica — na Mega dá
+ * 2.297 em vez de 2.298. Onde a diferença é visível na interface, a modalidade
+ * declara `qualquerExato` e ele prevalece. */
 function somaFaixas(faixas) {
   const p = faixas.reduce((acc, f) => acc + 1 / f.umEm, 0)
   return Math.round(1 / p)
@@ -20,12 +25,16 @@ function somaFaixas(faixas) {
 const RAW = [
   {
     key: 'mega',
+    premioBase: 20000000,
+    baseConfirmada: true,
+    baseFonte: 'conc. 3030 (11/07), após o 3029 pagar R$ 43 mi',
     nome: 'Mega-Sena',
     noSite: true,
     aposta: '6 dezenas de 60',
     sorteio: 'sorteia 6 dezenas',
     preco: 6.0,
     dias: '3x por semana (ter, qui, sáb)',
+    qualquerExato: 2298, // hipergeométrica exata; a soma das faixas dá 2.297
     faixas: [
       { label: 'Sena (6)', umEm: 50063860, principal: true },
       { label: 'Quina (5)', umEm: 154518 },
@@ -35,6 +44,9 @@ const RAW = [
   },
   {
     key: 'milionaria',
+    premioBase: 10000000,
+    baseConfirmada: true,
+    baseFonte: 'mínimo garantido em regulamento (Reserva Garantidora)',
     nome: '+Milionária',
     noSite: false,
     aposta: '6 dezenas de 50 + 2 trevos de 6',
@@ -57,6 +69,9 @@ const RAW = [
   },
   {
     key: 'timemania',
+    premioBase: 3200000,
+    baseConfirmada: false,
+    baseFonte: 'menor valor visto em julho — ainda acumulado',
     nome: 'Timemania',
     noSite: false,
     aposta: '10 dezenas de 80 + Time do Coração',
@@ -75,6 +90,9 @@ const RAW = [
   },
   {
     key: 'quina',
+    premioBase: 4000000,
+    baseConfirmada: false,
+    baseFonte: 'menor valor visto em julho — ainda acumulado',
     nome: 'Quina',
     noSite: false,
     aposta: '5 dezenas de 80',
@@ -91,6 +109,9 @@ const RAW = [
   },
   {
     key: 'lotomania',
+    premioBase: 500000,
+    baseConfirmada: true,
+    baseFonte: '1º concurso após o 2942 pagar',
     nome: 'Lotomania',
     noSite: false,
     aposta: '50 dezenas de 100 (00–99)',
@@ -110,6 +131,9 @@ const RAW = [
   },
   {
     key: 'supersete',
+    premioBase: 2700000,
+    baseConfirmada: false,
+    baseFonte: 'menor valor visto em julho — ainda acumulado',
     nome: 'Super Sete',
     noSite: false,
     aposta: '1 número (0–9) em cada uma das 7 colunas',
@@ -127,6 +151,9 @@ const RAW = [
   },
   {
     key: 'duplasena',
+    premioBase: 1600000,
+    baseConfirmada: false,
+    baseFonte: 'menor valor visto em julho — ainda acumulado',
     nome: 'Dupla Sena',
     noSite: false,
     aposta: '6 dezenas de 50',
@@ -144,6 +171,9 @@ const RAW = [
   },
   {
     key: 'diadesorte',
+    premioBase: 100000,
+    baseConfirmada: true,
+    baseFonte: 'conc. 1254 (24/07), após o 1253 pagar',
     nome: 'Dia de Sorte',
     noSite: false,
     aposta: '7 dezenas de 31 + 1 Mês de Sorte',
@@ -161,6 +191,9 @@ const RAW = [
   },
   {
     key: 'lotofacil',
+    premioBase: 2000000,
+    baseConfirmada: true,
+    baseFonte: 'conc. 3744 (24/07), após o 3743 pagar',
     nome: 'Lotofácil',
     noSite: true,
     aposta: '15 dezenas de 25',
@@ -178,6 +211,9 @@ const RAW = [
   },
   {
     key: 'loteca',
+    premioBase: 1000000,
+    baseConfirmada: true,
+    baseFonte: 'conc. 1263, após o 1262 ter 3 acertadores',
     nome: 'Loteca',
     noSite: false,
     aposta: '1 palpite (1/X/2) em 14 jogos de futebol',
@@ -193,11 +229,16 @@ const RAW = [
   },
   {
     key: 'federal',
+    premioBase: 50000,
+    baseConfirmada: true,
+    baseFonte: 'prêmio fixo (fração 1/10 de R$ 500 mil) — nunca acumula',
     nome: 'Federal',
     noSite: false,
-    aposta: 'bilhete numerado (00000–99999)',
+    aposta: 'fração de bilhete numerado (00000–99999)',
     sorteio: 'sorteia 5 bilhetes',
-    preco: null, // vendido em bilhetes/frações — preço varia por extração
+    // Vendida em bilhete inteiro (R$ 40) ou frações. Usamos a fração de 1/10,
+    // que é a compra usual, para ficar comparável às outras apostas mínimas.
+    preco: 4.0,
     dias: '2x por semana (qua, sáb)',
     faixas: [
       { label: '1º prêmio', umEm: 100000, principal: true },
@@ -212,9 +253,15 @@ const RAW = [
 export const MODALIDADES = RAW.map((m) => ({
   ...m,
   principal: m.faixas.find((f) => f.principal).umEm,
-  qualquer: m.somaInvalida ? m.faixas[1].umEm : somaFaixas(m.faixas),
+  qualquer: m.qualquerExato ?? (m.somaInvalida ? m.faixas[1].umEm : somaFaixas(m.faixas)),
   // Quanto custaria comprar todas as combinações do prêmio principal
   custoCobertura: m.preco ? m.faixas.find((f) => f.principal).umEm * m.preco : null,
+  // Quanto de cada aposta volta, em média, só pela faixa principal:
+  // prêmio na base ÷ chance. É o número que compara modalidades de forma justa,
+  // porque normaliza pelo preço e não se deixa inflar por acumulação.
+  retorno: m.preco
+    ? (100 * (m.premioBase / m.faixas.find((f) => f.principal).umEm)) / m.preco
+    : null,
 }))
 
 /** Ordenado da mais provável para a menos provável (prêmio principal). */
@@ -222,6 +269,21 @@ export const POR_PRINCIPAL = [...MODALIDADES].sort((a, b) => a.principal - b.pri
 
 /** Ordenado por chance de levar qualquer prêmio. */
 export const POR_QUALQUER = [...MODALIDADES].sort((a, b) => a.qualquer - b.qualquer)
+
+/** Ordenado pelo prêmio na base (sem acumulação), do maior para o menor. */
+export const POR_PREMIO = [...MODALIDADES].sort((a, b) => b.premioBase - a.premioBase)
+
+/** Ordenado pelo que volta por aposta — a comparação mais justa. */
+export const POR_RETORNO = [...MODALIDADES]
+  .filter((m) => m.retorno != null)
+  .sort((a, b) => b.retorno - a.retorno)
+
+export const ORDENACOES = [
+  { id: 'principal', label: 'Chance do prêmio principal', lista: POR_PRINCIPAL },
+  { id: 'qualquer', label: 'Chance de ganhar algo', lista: POR_QUALQUER },
+  { id: 'premio', label: 'Tamanho do prêmio', lista: POR_PREMIO },
+  { id: 'retorno', label: 'Quanto volta por aposta', lista: POR_RETORNO },
+]
 
 export const MEGA = MODALIDADES.find((m) => m.key === 'mega')
 export const LOTOFACIL = MODALIDADES.find((m) => m.key === 'lotofacil')

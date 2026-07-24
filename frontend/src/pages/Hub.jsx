@@ -54,25 +54,40 @@ export default function Hub() {
           ))}
         </div>
 
-        {/* Comparação de chances — reforça a ideia de jogar um de cada */}
+        {/* Comparação de chances — as duas dimensões que decidem a escolha */}
         <div className="bg-white border border-zinc-200 rounded-2xl p-5">
-          <p className="font-semibold text-sm">Comparação de chances (prêmio principal)</p>
-          <div className="grid sm:grid-cols-2 gap-3 mt-3">
-            <div className="bg-zinc-50 rounded-lg p-3">
-              <p className="text-xs text-zinc-500">Mega-Sena</p>
-              <p className="font-bold tabular-nums">1 em 50.063.860</p>
-              <p className="text-xs text-zinc-500">R$ 6,00 · prêmio geralmente maior</p>
-            </div>
-            <div className="bg-zinc-50 rounded-lg p-3">
-              <p className="text-xs text-zinc-500">Lotomania (20 ou 0 acertos)</p>
-              <p className="font-bold tabular-nums">1 em 5.686.318</p>
-              <p className="text-xs text-zinc-500">R$ 3,00 · ~8,8× mais provável, prêmio menor</p>
-            </div>
+          <p className="font-semibold text-sm">Comparação de chances</p>
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-xs text-zinc-500 border-b border-zinc-200">
+                  <th className="py-1.5 pr-3 font-medium">Loteria</th>
+                  <th className="py-1.5 pr-3 font-medium">Prêmio principal</th>
+                  <th className="py-1.5 pr-3 font-medium">Ganhar algo</th>
+                  <th className="py-1.5 font-medium">Aposta</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-zinc-100">
+                  <td className="py-2 pr-3 font-medium">Mega-Sena</td>
+                  <td className="py-2 pr-3 tabular-nums">1 em 50.063.860</td>
+                  <td className="py-2 pr-3 tabular-nums">1 em 2.298</td>
+                  <td className="py-2 tabular-nums">R$ 6,00</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-3 font-medium">Lotofácil</td>
+                  <td className="py-2 pr-3 tabular-nums">1 em 3.268.760</td>
+                  <td className="py-2 pr-3 tabular-nums font-semibold">1 em 9</td>
+                  <td className="py-2 tabular-nums">R$ 3,50</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <p className="text-xs text-zinc-500 mt-3">
-            Uma estratégia comum é jogar <strong>um de cada</strong>: a Lotomania dá mais chance de
-            ganhar algo; a Mega-Sena guarda o prêmio gigante. Nenhuma muda a matemática de fundo —
-            é só diversificação de gosto.
+            A Lotofácil é <strong>15× mais provável</strong> no prêmio principal e paga alguma
+            coisa a cada 9 apostas — mas o prêmio é de milhões, não de dezenas de milhões. A
+            Mega-Sena é o contrário: quase nunca paga, e quando paga muda a vida. Jogar uma de cada
+            cobre as duas pontas. Nenhuma escolha de números altera a matemática de fundo.
           </p>
         </div>
 

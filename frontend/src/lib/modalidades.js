@@ -2,8 +2,8 @@
 //
 // Diferente de `lotteries.js` — que descreve apenas as loterias que o app
 // realmente opera (gerar jogos, conferir, estatísticas) — este arquivo é
-// puramente informativo: serve à página /comparar, para situar a Mega-Sena e a
-// Lotomania (as duas que já temos) dentro do cardápio completo da Caixa.
+// puramente informativo: situa a Mega-Sena e a Lotofácil (as duas que o site
+// tem) dentro do cardápio completo da Caixa. `noSite` marca quais são essas.
 //
 // Probabilidades: valores publicados pela Caixa para a aposta MÍNIMA de cada
 // modalidade. Todas foram reconferidas por cálculo hipergeométrico; onde a
@@ -92,7 +92,7 @@ const RAW = [
   {
     key: 'lotomania',
     nome: 'Lotomania',
-    noSite: true,
+    noSite: false,
     aposta: '50 dezenas de 100 (00–99)',
     sorteio: 'sorteia 20 dezenas',
     preco: 3.0,
@@ -162,7 +162,7 @@ const RAW = [
   {
     key: 'lotofacil',
     nome: 'Lotofácil',
-    noSite: false,
+    noSite: true,
     aposta: '15 dezenas de 25',
     sorteio: 'sorteia 15 dezenas',
     preco: 3.5,
@@ -224,7 +224,7 @@ export const POR_PRINCIPAL = [...MODALIDADES].sort((a, b) => a.principal - b.pri
 export const POR_QUALQUER = [...MODALIDADES].sort((a, b) => a.qualquer - b.qualquer)
 
 export const MEGA = MODALIDADES.find((m) => m.key === 'mega')
-export const LOTOMANIA = MODALIDADES.find((m) => m.key === 'lotomania')
+export const LOTOFACIL = MODALIDADES.find((m) => m.key === 'lotofacil')
 
 /** "1 em 50.063.860" */
 export function umEm(n) {

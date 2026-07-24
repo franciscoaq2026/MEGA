@@ -1,14 +1,23 @@
-# Mega-Sena Stats
+# Loterias Stats
 
-App web pessoal de análise estatística da Mega-Sena: histórico de sorteios,
-estatísticas com gráficos, geração de jogos por estratégias e acompanhamento
-dos seus jogos (manual vs. gerado pelo app) com conferência automática.
+App web pessoal de análise estatística das loterias da Caixa: histórico de
+sorteios, estatísticas com gráficos, geração de jogos por estratégias e
+acompanhamento dos seus jogos (manual vs. gerado pelo app) com conferência
+automática.
 
-> **Aviso importante (e visível no app):** cada sorteio da Mega-Sena é
-> independente e estatisticamente aleatório — **nenhuma estratégia aumenta a
-> chance real de acerto**. As estatísticas aqui são exploração de dados e
-> entretenimento, não previsão. O app inclui inclusive um *backtest* que
-> demonstra isso com os próprios dados.
+Duas modalidades, escolhidas pelos extremos opostos que ocupam:
+
+| | Aposta | Prêmio principal | Ganhar algo | Preço |
+| --- | --- | --- | --- | --- |
+| **Mega-Sena** | 6 de 60 | 1 em 50.063.860 | 1 em 2.298 | R$ 6,00 |
+| **Lotofácil** | 15 de 25 | 1 em 3.268.760 | **1 em 9** | R$ 3,50 |
+
+> **Aviso importante (e visível no app):** cada sorteio é independente e
+> estatisticamente aleatório — **nenhuma estratégia aumenta a chance real de
+> acerto**. A única coisa que muda a probabilidade é jogar mais dezenas ou mais
+> bilhetes, pagando proporcionalmente por isso. As estatísticas aqui são
+> exploração de dados e entretenimento, não previsão. O app inclui inclusive um
+> *backtest* que demonstra isso com os próprios dados.
 
 ## Stack
 
@@ -52,38 +61,64 @@ cd backend
 
 ## Fontes de dados
 
+O slug da loteria (`megasena`, `lotofacil`) entra na URL das três fontes:
+
 1. **API da Caixa** (a mesma do site oficial):
-   `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena[/{concurso}]`
-2. **Fallback automático**: `https://api.guidi.dev.br/loteria/megasena/...`
+   `https://servicebus2.caixa.gov.br/portaldeloterias/api/{slug}[/{concurso}]`
+2. **Fallback automático**: `https://api.guidi.dev.br/loteria/{slug}/...`
    (se a Caixa falhar, o app passa a usar o fallback na mesma sincronização)
-3. **Plano C — importar CSV** (botão na tela Sorteios): arquivo com colunas
-   `concurso, data, dezena1..dezena6`, separado por `,` ou `;`, com ou sem
+3. **Espelho estático no GitHub** (`maickon/free-apiloterias`) — a única fonte
+   que responde a partir de um datacenter, já que Caixa e guidi bloqueiam IPs
+   que não sejam residenciais. Cobre as duas modalidades.
+4. **Plano C — importar CSV** (botão na tela Sorteios): arquivo com colunas
+   `concurso, data, dezena1..dezenaN`, separado por `,` ou `;`, com ou sem
    cabeçalho, datas em `dd/mm/aaaa` ou `aaaa-mm-dd`.
 
 Tudo fica em cache no SQLite (`backend/data/megasena.db`), então o app segue
-funcionando se as APIs caírem. Se existir `backend/data/seed_megasena.csv`,
-ele é carregado automaticamente quando o banco está vazio (útil em
-hospedagem serverless, onde o disco é efêmero).
+funcionando se as APIs caírem. Cada loteria tem um histórico embutido
+(`backend/data/seed_megasena.json`, `seed_lotofacil.json`) carregado
+automaticamente quando o banco está vazio — útil em hospedagem serverless,
+onde o disco é efêmero.
 
 ## Funcionalidades
+
+Todas valem para as duas loterias — o app é parametrizado por
+`backend/app/lotteries.py`, nada assume "6 de 60".
 
 - **Sorteios**: histórico completo, sincronização incremental em lotes com
   progresso, importação de CSV.
 - **Estatísticas**: frequência por número (janelas: todos/100/50/25/10),
-  quentes/frios, mapa de calor 1–60, atraso atual, pares×ímpares
-  (observado vs. teórico), distribuição da soma, duplas mais frequentes.
+  quentes/frios, mapa de calor, atraso atual, pares×ímpares (observado vs.
+  teórico), distribuição da soma, duplas mais frequentes.
 - **Raio-X de um sorteio**: mostra onde cada dezena sorteada estava no
-  ranking de frequência/atraso **na véspera** do concurso e quanto os
-  "6 mais quentes"/"6 mais atrasados" teriam acertado — o teste honesto de
-  "dava para prever?" (spoiler: não dava).
-- **Gerar jogos** (1–20 jogos, 6–20 dezenas): aleatório puro, ponderado por
-  frequência, atrasados e balanceado; opção **anti-rateio** (evita
-  combinações populares — não muda a chance, mas evita dividir prêmio);
-  painel de **probabilidades reais** (sena/quina/quadra, custo equivalente);
-  **backtest** das estratégias contra o histórico.
-- **Meus jogos**: registre seu jogo manual (volante 1–60) e o jogo gerado
-  pelo app para o mesmo concurso; conferência automática (acertos + faixa)
-  quando o resultado é sincronizado; painel comparativo você × app.
+  ranking de frequência/atraso **na véspera** do concurso e quanto os mais
+  quentes/mais atrasados teriam acertado — o teste honesto de "dava para
+  prever?" (spoiler: não dava).
+- **Gerar jogos**: aleatório puro, ponderado por frequência, atrasados e
+  balanceado; opção **anti-rateio** (evita combinações populares — não muda a
+  chance, mas evita dividir prêmio); painel de **probabilidades reais** por
+  faixa, com o custo equivalente; **backtest** das estratégias contra o
+  histórico.
+- **Fábrica**: filtros por indicador, termômetro de tipicidade e fechamentos
+  (roda completa e reduzida, com a garantia verificada por força bruta antes
+  de mostrar). Os indicadores são escolhidos por loteria — ver abaixo.
+- **Meus jogos**: registre seu jogo manual e o gerado pelo app para o mesmo
+  concurso; conferência automática (acertos + faixa) quando o resultado é
+  sincronizado; painel comparativo você × app.
+
+### Por que os filtros mudam entre as loterias
+
+Um indicador que separa bem "6 de 60" pode não dizer nada em "15 de 25". O
+caso mais claro é **dezenas consecutivas**: medindo os 3.657 concursos da
+Lotofácil no histórico embutido, 4+ números seguidos aparecem em **87%** dos
+sorteios — marcar 15 de 25 força sequências. O mesmo limiar na Mega ocorre em
+0,2%. Por isso a Lotofácil não filtra por consecutivos e usa **miolo** no
+lugar; e o limiar de "desenho no volante" (anti-rateio) é 4 na Mega e 9 na
+Lotofácil, que é onde a raridade se equipara.
+
+Na direção oposta, **repetidas do concurso anterior** é o padrão mais estável
+da Lotofácil: como 15 das 25 dezenas saem a cada sorteio, a média medida é
+exatamente 9.
 
 ## Deploy (Vercel + Turso)
 
@@ -105,13 +140,14 @@ servidor nem se perdem em deploys.
    turso db tokens create megasena       # -> TURSO_AUTH_TOKEN
    ```
 2. **Popule o histórico uma vez, da sua máquina** (evita os limites de tempo
-   das funções do Vercel):
+   das funções do Vercel). Sem argumentos, semeia as duas loterias:
    ```bash
    cd backend
    export TURSO_DATABASE_URL="libsql://...turso.io"
    export TURSO_AUTH_TOKEN="..."
    .venv/bin/pip install libsql
-   .venv/bin/python seed_turso.py        # ou: python seed_turso.py arquivo.csv
+   .venv/bin/python seed_turso.py                    # mega + lofa
+   .venv/bin/python seed_turso.py --loteria lofa     # só a Lotofácil
    ```
 3. **Importe o repositório no Vercel** como projeto único:
    - *Framework Preset*: **Other** (o `vercel.json` já define build e saída).
@@ -131,18 +167,27 @@ só busca os concursos novos.
 ```
 backend/
   app/
+    lotteries.py   # registro das loterias — parametriza todo o resto
     main.py        # FastAPI, CORS, montagem das rotas (com e sem /api)
-    db.py          # SQLite (cache de sorteios + meta)
-    fetcher.py     # API da Caixa + fallback guidi
+    db.py          # SQLite/Turso (cache de sorteios + meta + apostas)
+    fetcher.py     # API da Caixa + fallback guidi + espelho GitHub
     csv_utils.py   # parser de CSV (importação e seed)
     stats.py       # estatísticas puras (frequência, atraso, soma, raio-x…)
-    generator.py   # estratégias de geração + odds + anti-rateio
+    analysis.py    # indicadores de um jogo + faixas típicas + termômetro
+    generator.py   # estratégias de geração + odds + fechamentos + anti-rateio
     checker.py     # conferência de apostas + backtest
-    routers/       # draws.py, stats.py, games.py
+    routers/       # draws.py, stats.py, games.py, bets.py, auth.py
+  data/            # seed_megasena.json, seed_lotofacil.json
   tests/           # pytest
 frontend/
   src/
-    pages/         # Dashboard, Sorteios, Estatisticas, GerarJogos, MeusJogos
+    pages/         # Hub, Dashboard, Sorteios, Estatisticas, GerarJogos,
+                   # Fabrica, MeusJogos
     components/    # Layout, Ball, Card, Volante, Disclaimer…
-    lib/           # api.js, bets.js (localStorage), format.js
+    lib/           # lotteries.js (espelha o backend), api.js, bets.js,
+                   # modalidades.js (catálogo comparativo das 11 da Caixa)
 ```
+
+Para acrescentar uma loteria, o caminho é declarar em `backend/app/lotteries.py`
+e em `frontend/src/lib/lotteries.js`. Se ela tiver mecânica diferente (colunas
+posicionais, trevos, dois sorteios), aí é preciso mexer nos motores.

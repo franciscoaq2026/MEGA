@@ -9,7 +9,7 @@ const PAGE = 24
 // Fontes oficiais acessadas DIRETO do navegador do usuário. A Caixa/guidi
 // bloqueiam IPs de datacenter (o servidor no Vercel), mas não o IP residencial
 // de quem usa o site — então os concursos mais novos entram por aqui.
-// As URLs dependem do "slug" da loteria (megasena, lotomania, ...).
+// As URLs dependem do "slug" da loteria (megasena, lotofacil, ...).
 function fontesDiretas(fonte) {
   return [
     {

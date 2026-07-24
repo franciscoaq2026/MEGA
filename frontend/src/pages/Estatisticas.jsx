@@ -309,7 +309,10 @@ export default function Estatisticas() {
       )}
 
       {freq && (
-        <Card title="Mapa de calor 1–60" subtitle="Quanto mais escuro, mais vezes o número foi sorteado na janela escolhida">
+        <Card
+          title={`Mapa de calor ${cfg.min}–${cfg.max}`}
+          subtitle="Quanto mais escuro, mais vezes o número foi sorteado na janela escolhida"
+        >
           <Heatmap freq={freq.freq} />
         </Card>
       )}
@@ -453,7 +456,8 @@ export default function Estatisticas() {
 
       {!cfg.avancada && (
         <p className="text-xs text-zinc-500 border-t border-zinc-100 pt-3">
-          O “Raio-X de um sorteio” (teste de previsibilidade) ainda é específico da Mega-Sena.
+          O “Raio-X de um sorteio” (teste de previsibilidade) ainda não está disponível nesta
+          loteria.
         </p>
       )}
     </div>

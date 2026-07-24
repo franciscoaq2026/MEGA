@@ -16,8 +16,11 @@ export default function Volante({ selected, onChange, max }) {
     }
   }
 
+  // Classes literais: o Tailwind não enxerga nomes montados por interpolação.
+  const gridClass = { 5: 'grid-cols-5 max-w-[15rem]', 10: 'grid-cols-10 max-w-md' }[cfg.cols]
+
   return (
-    <div className={`grid grid-cols-10 gap-1 ${cfg.total > 60 ? 'max-w-lg' : 'max-w-md'}`}>
+    <div className={`grid gap-1 ${gridClass || 'grid-cols-10 max-w-md'}`}>
       {numbers.map((n) => {
         const on = set.has(n)
         return (

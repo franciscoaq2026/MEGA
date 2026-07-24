@@ -1,6 +1,6 @@
 const BASE = '/api'
 
-// Loteria atual — definida pelo LotteryProvider ao entrar em /mega ou /loto.
+// Loteria atual — definida pelo LotteryProvider ao entrar em /mega ou /lofa.
 // É anexada como ?loteria=... em toda chamada. Endpoints que não usam o
 // parâmetro simplesmente o ignoram (FastAPI descarta query params extras).
 let currentLoteria = 'mega'

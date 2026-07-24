@@ -17,7 +17,7 @@ export default function App() {
       {/* Hub: escolha da loteria */}
       <Route index element={<Hub />} />
 
-      {/* Cada loteria vive sob /:loteria (ex.: /mega, /loto) */}
+      {/* Cada loteria vive sob /:loteria (ex.: /mega, /lofa) */}
       <Route path=":loteria" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="sorteios" element={<Sorteios />} />

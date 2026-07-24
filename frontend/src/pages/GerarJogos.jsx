@@ -8,12 +8,14 @@ import Help from '../components/Help.jsx'
 import { formatMoney } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
 
+// Descrições genéricas: valem para qualquer loteria do hub. O que é
+// específico (soma média, tamanho da aposta) vem da config em tempo de render.
 const ESTRATEGIAS = [
   {
     id: 'aleatorio',
     nome: 'Aleatório puro',
     desc: 'Sem viés nenhum — exatamente como a loteria funciona (baseline).',
-    help: 'Sorteia os números totalmente ao acaso, igual à Mega-Sena de verdade. É a opção mais honesta: nenhuma outra estratégia tem chance de acerto maior do que esta.',
+    help: 'Sorteia os números totalmente ao acaso, igual ao sorteio de verdade. É a opção mais honesta: nenhuma outra estratégia tem chance de acerto maior do que esta.',
   },
   {
     id: 'frequencia',
@@ -30,8 +32,8 @@ const ESTRATEGIAS = [
   {
     id: 'balanceado',
     nome: 'Balanceado',
-    desc: 'Mistura quentes e frios, equilibra pares/ímpares e mira a soma perto da média histórica (~183).',
-    help: 'Monta jogos parecidos com os sorteios típicos: mistura quentes e frios, equilibra pares/ímpares e mira a soma perto de 183. Dá cara de “jogo bem-feito”, mas não altera a probabilidade.',
+    desc: 'Mistura quentes e frios, equilibra pares/ímpares e mira a soma perto da média histórica.',
+    help: 'Monta jogos parecidos com os sorteios típicos: mistura quentes e frios, equilibra pares/ímpares e mira a soma perto da média da loteria. Dá cara de “jogo bem-feito”, mas não altera a probabilidade.',
   },
 ]
 
@@ -39,14 +41,12 @@ const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
 
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
-  const dezenasFixas = cfg.escolher === cfg.maxEscolher // Lotomania: sempre 50
-  const espelhoDisponivel = 2 * cfg.escolher === cfg.total // Lotomania: 50 de 100
+  const dezenasFixas = cfg.escolher === cfg.maxEscolher
   const [estrategia, setEstrategia] = useState('aleatorio')
   const [qtdJogos, setQtdJogos] = useState(3)
   const [dezenas, setDezenas] = useState(cfg.escolher)
   const [antiRateio, setAntiRateio] = useState(false)
-  const [espelho, setEspelho] = useState(false)
-  const [preco, setPreco] = useState('6.00')
+  const [preco, setPreco] = useState(cfg.preco.toFixed(2))
   const [odds, setOdds] = useState(null)
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -110,7 +110,6 @@ export default function GerarJogos() {
         jogos: qtdJogos,
         dezenas,
         anti_rateio: antiRateio,
-        espelho: espelhoDisponivel && espelho,
       })
       setResult(r)
       setSalvos({})
@@ -133,10 +132,7 @@ export default function GerarJogos() {
         ) : (
           <p className="text-xs text-zinc-500">
             Na {cfg.nome} você marca {cfg.escolher} de {cfg.total} dezenas. As estratégias abaixo
-            só mudam a <em>aparência</em> do jogo — nenhuma altera a probabilidade de acerto (o
-            sorteio é aleatório). O que realmente aumenta a chance de ganhar <em>algum</em> prêmio
-            é a <strong>aposta espelho</strong> (abaixo) e jogar mais bilhetes. Por isso a{' '}
-            {cfg.nome} não tem “Fábrica” de filtros: eles seriam enfeite, sem efeito real.
+            só mudam a <em>aparência</em> do jogo — nenhuma altera a probabilidade de acerto.
           </p>
         )}
       </div>
@@ -229,27 +225,6 @@ export default function GerarJogos() {
             </label>
           </div>
 
-          {espelhoDisponivel && (
-            <label className="flex items-start gap-2 text-sm mt-3 border-t border-zinc-100 pt-3">
-              <input
-                type="checkbox"
-                checked={espelho}
-                onChange={(e) => setEspelho(e.target.checked)}
-                className="mt-0.5 accent-emerald-600"
-              />
-              <span>
-                <span className="text-zinc-800 font-medium inline-flex items-center gap-1.5">
-                  Aposta espelho (cobre os 100 números)
-                  <Help text="Gera, junto de cada jogo, o seu 'espelho' — as 50 dezenas que você NÃO marcou. Os dois bilhetes juntos cobrem todo o volante. Como não se sobrepõem, aumentam a chance de ganhar ALGUM prêmio (o dobro de bilhetes, sem desperdício). ATENÇÃO: NÃO aumenta a chance do prêmio principal (essa é fixa) e NÃO 'garante' o prêmio máximo — isso é mito. Cada bilhete custa R$ 3 (o par sai R$ 6)." />
-                </span>
-                <span className="block text-xs text-zinc-500">
-                  Gera também o complemento (as 50 que você não marcou). Dobra os bilhetes e a
-                  chance de ganhar algo — mas <strong>não</strong> muda a chance do prêmio máximo.
-                </span>
-              </span>
-            </label>
-          )}
-
           <button
             onClick={gerar}
             disabled={busy}
@@ -274,15 +249,11 @@ export default function GerarJogos() {
             <div className="space-y-3 text-sm">
               <table className="w-full text-left">
                 <tbody>
-                  {[
-                    ['Sena (6 acertos)', odds.faixas.sena.one_in],
-                    ['Quina (5 acertos)', odds.faixas.quina.one_in],
-                    ['Quadra (4 acertos)', odds.faixas.quadra.one_in],
-                  ].map(([label, oneIn]) => (
+                  {Object.entries(odds.faixas).map(([label, f]) => (
                     <tr key={label} className="border-b border-zinc-100 last:border-0">
-                      <td className="py-1.5 text-zinc-600">{label}</td>
+                      <td className="py-1.5 text-zinc-600 capitalize">{label}</td>
                       <td className="py-1.5 text-right font-semibold tabular-nums">
-                        1 em {fmt(oneIn)}
+                        1 em {fmt(f.one_in)}
                       </td>
                     </tr>
                   ))}
@@ -321,13 +292,6 @@ export default function GerarJogos() {
           title={`Jogos gerados — ${ESTRATEGIAS.find((e) => e.id === result.estrategia)?.nome}`}
           subtitle={result.aviso}
         >
-          {result.espelho && (
-            <p className="text-[11px] text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 mb-3">
-              <strong>Aposta espelho:</strong> cada jogo vem com o seu espelho (as 50 dezenas não
-              marcadas). O par cobre os 100 números e aumenta a chance de ganhar <em>algum</em>{' '}
-              prêmio. Não muda a chance do prêmio principal — e não “garante” o prêmio máximo.
-            </p>
-          )}
           <label className="flex items-center gap-2 text-sm mb-3">
             <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
             <input
@@ -340,14 +304,9 @@ export default function GerarJogos() {
           </label>
           <div className="grid sm:grid-cols-2 gap-3">
             {result.jogos.map((j, i) => (
-              <div
-                key={i}
-                className={`border rounded-lg p-3 ${j.espelho ? 'border-zinc-300 border-dashed bg-zinc-50' : 'border-zinc-200'}`}
-              >
+              <div key={i} className="border border-zinc-200 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-zinc-500">
-                    {j.espelho ? `Espelho do jogo ${j.par + 1}` : `Jogo ${(j.par ?? i) + 1}`}
-                  </span>
+                  <span className="text-xs font-medium text-zinc-500">Jogo {i + 1}</span>
                   <span className="text-xs text-zinc-500">
                     soma {j.soma} · {j.pares}P/{j.dezenas.length - j.pares}Í
                   </span>

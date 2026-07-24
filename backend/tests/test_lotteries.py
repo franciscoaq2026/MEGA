@@ -371,6 +371,48 @@ def test_odds_table_lotofacil():
         assert all(l["retorno_fixo"]["valor"] == 0 for l in mega["linhas"])
 
 
+def test_garantia_minima_casa_dos_pombos():
+    """k dezenas garantem k + sorteadas - total acertos, sem depender de sorte."""
+    from app import generator
+
+    lofa = lotteries.get_loteria("lofa")
+    mega = lotteries.get_loteria("mega")
+    # Lotofácil: marcar k deixa 25-k de fora, e só essas podem escapar.
+    assert generator.garantia_minima(15, lofa) == 5
+    assert generator.garantia_minima(18, lofa) == 8
+    assert generator.garantia_minima(20, lofa) == 10
+    # A faixa mínima premiada é 11: nem a aposta máxima garante prêmio.
+    assert generator.garantia_minima(lofa["max_escolher"], lofa) == min(lofa["faixas"]) - 1
+    # Mega: 6 + 6 - 60 < 0, nenhum acerto é garantido.
+    assert generator.garantia_minima(6, mega) == 0
+    assert generator.garantia_minima(20, mega) == 0
+
+    with make_client() as c:
+        linhas = {l["dezenas"]: l for l in c.get("/api/odds/table?loteria=lofa").json()["linhas"]}
+        assert linhas[20]["garantia_minima"] == {"acertos": 10, "premia": False}
+        assert linhas[15]["garantia_minima"]["acertos"] == 5
+        mega_linhas = c.get("/api/odds/table?loteria=mega").json()["linhas"]
+        assert all(l["garantia_minima"]["acertos"] == 0 for l in mega_linhas)
+
+
+def test_filtro_multiplos_3_aceito():
+    """multiplos_3 é pontuado pelo termômetro, então precisa ser filtrável."""
+    with make_client() as c:
+        db.upsert_draws(
+            [{"concurso": 991000 + i, "data": "2026-01-01",
+              "dezenas": sorted(((n * 3 + i) % 25) + 1 for n in range(15))}
+             for i in range(60)],
+            "lofa",
+        )
+        r = c.post(
+            "/api/generate-advanced?loteria=lofa",
+            json={"jogos": 3, "filtros": {"multiplos_3": {"min": 4, "max": 6}}},
+        )
+        assert r.status_code == 200, r.text
+        for j in r.json()["jogos"]:
+            assert 4 <= sum(1 for n in j["dezenas"] if n % 3 == 0) <= 6
+
+
 def test_aleatoriedade_lotofacil():
     with make_client() as c:
         # 60 sorteios sintéticos só para o endpoint responder

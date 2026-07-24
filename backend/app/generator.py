@@ -405,6 +405,22 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
     }
 
 
+def garantia_minima(k: int, cfg: dict) -> int:
+    """Acertos que uma aposta de k dezenas garante SEMPRE, por casa dos pombos.
+
+    São `sorteadas` dezenas tiradas de `total`; ao marcar k, sobram total-k sem
+    marcar, e no máximo essas podem ficar de fora do seu bilhete. Logo:
+
+        garantido = k + sorteadas - total
+
+    Na Mega dá negativo (6+6-60): marcar 6 de 60 não garante acerto nenhum.
+    Na Lotofácil dá k-10 — e é uma propriedade forte da modalidade: 20 dezenas
+    garantem 10 acertos em qualquer sorteio. Note que 10 é exatamente UM a
+    menos que a faixa mínima premiada (11): garantir prêmio exigiria 21
+    dezenas, acima do limite de 20 que a Caixa aceita."""
+    return max(0, k + cfg["sorteadas"] - cfg["total"])
+
+
 def _bilhetes_premiados(k: int, acertos: int, cfg: dict) -> float:
     """Nº médio de apostas simples, dentro de uma aposta de k dezenas, que
     fazem exatamente `acertos`.
@@ -435,11 +451,13 @@ def odds_table(loteria: str = "mega") -> dict:
     cfg = lotteries.get_loteria(loteria)
     fixos = cfg.get("premios_fixos") or {}
     preco = cfg["preco"]
+    menor_faixa = min(cfg["faixas"]) if cfg["faixas"] else None
     linhas = []
     for k in range(cfg["escolher"], cfg["max_escolher"] + 1):
         o = odds(k, preco, loteria)
         qualquer = sum(f["prob"] for f in o["faixas"].values())
         retorno_fixo = sum(_bilhetes_premiados(k, ac, cfg) * val for ac, val in fixos.items())
+        garantido = garantia_minima(k, cfg)
         linhas.append(
             {
                 **o,
@@ -453,6 +471,10 @@ def odds_table(loteria: str = "mega") -> dict:
                     "pct": round(100 * retorno_fixo / o["custo_estimado"], 2)
                     if o["custo_estimado"]
                     else 0.0,
+                },
+                "garantia_minima": {
+                    "acertos": garantido,
+                    "premia": menor_faixa is not None and garantido >= menor_faixa,
                 },
             }
         )

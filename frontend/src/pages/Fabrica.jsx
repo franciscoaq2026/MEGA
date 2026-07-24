@@ -25,6 +25,7 @@ const FILTROS_BASE = {
   moldura: ['Dezenas na moldura', 'Quantos números caem na borda do volante (primeira/última linha ou coluna). Puro padrão visual do cartão.'],
   miolo: ['Dezenas no miolo', 'Quantos números caem no centro do volante, fora da borda. No volante 5x5 da Lotofácil o miolo são só 9 dezenas (7, 8, 9, 12, 13, 14, 17, 18, 19). Cosmético.'],
   baixas: ['Dezenas baixas', 'Quantos números vêm da metade de baixo do volante. Serve para equilibrar baixas × altas. Cosmético.'],
+  multiplos_3: ['Múltiplos de 3', 'Quantos números do jogo são divisíveis por 3. Cosmético.'],
   repetidas_anterior: ['Repetidas do último sorteio', 'Quantos números do seu jogo saíram no concurso anterior.'],
 }
 
@@ -32,8 +33,8 @@ const FILTROS_BASE = {
 // "miolo" e perde "consecutivos": marcar 15 de 25 força sequências em todo
 // jogo (4+ seguidos saem em 87% dos sorteios), então o filtro não separaria nada.
 const FILTROS_POR_LOTERIA = {
-  mega: ['soma', 'pares', 'primos', 'moldura', 'baixas', 'repetidas_anterior'],
-  lofa: ['soma', 'pares', 'primos', 'moldura', 'miolo', 'baixas', 'repetidas_anterior'],
+  mega: ['soma', 'pares', 'primos', 'moldura', 'baixas', 'multiplos_3', 'repetidas_anterior'],
+  lofa: ['soma', 'pares', 'primos', 'moldura', 'miolo', 'baixas', 'multiplos_3', 'repetidas_anterior'],
 }
 
 // Ajuda específica que só faz sentido em uma loteria.

@@ -149,6 +149,48 @@ export default function Probabilidades() {
         </p>
       </Card>
 
+      {/* Garantia por casa dos pombos — só existe quando escolher + sorteadas > total */}
+      {tabela?.linhas.some((l) => l.garantia_minima.acertos > 0) && (
+        <Card
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              O que você acerta mesmo no pior caso
+              <Help text="Princípio da casa dos pombos: como só existem 25 dezenas e 15 são sorteadas, ao marcar k você deixa 25-k de fora — e no máximo essas podem escapar. O mínimo garantido é k + 15 - 25, sem depender de sorte nenhuma." />
+            </span>
+          }
+          subtitle="Acertos garantidos em qualquer sorteio, sem depender de sorte"
+        >
+          <div className="flex flex-wrap gap-2">
+            {tabela.linhas.map((l) => (
+              <div
+                key={l.dezenas}
+                className={`rounded-lg px-3 py-2 border ${
+                  l.garantia_minima.premia ? cfg.tintClass : 'bg-zinc-50 border-zinc-200'
+                }`}
+              >
+                <p className="text-xs text-zinc-500">{l.dezenas} dezenas</p>
+                <p className="font-bold tabular-nums">
+                  ≥ {l.garantia_minima.acertos} acertos
+                </p>
+              </div>
+            ))}
+          </div>
+          {!tabela.linhas.some((l) => l.garantia_minima.premia) && (
+            <p className="text-sm text-zinc-700 mt-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+              Repare no detalhe: nem a aposta máxima garante prêmio. Com{' '}
+              {cfg.maxEscolher} dezenas ({formatMoney(tabela.linhas[tabela.linhas.length - 1].custo_estimado)}
+              ) você garante{' '}
+              {tabela.linhas[tabela.linhas.length - 1].garantia_minima.acertos} acertos —{' '}
+              <strong>exatamente um a menos</strong> que a faixa mínima premiada, que é{' '}
+              {Math.min(...cfg.premios.map((p) => p.ac))}. Garantir prêmio exigiria{' '}
+              {Math.min(...cfg.premios.map((p) => p.ac)) + (cfg.total - cfg.sorteadas)} dezenas, e a
+              Caixa não aceita passar de {cfg.maxEscolher}. O limite do volante está posto
+              justamente aí.
+            </p>
+          )}
+        </Card>
+      )}
+
       {/* 2. Prêmios fixos e para onde vai o dinheiro */}
       {temFixos && (
         <Card

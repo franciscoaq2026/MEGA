@@ -371,6 +371,43 @@ def test_odds_table_lotofacil():
         assert all(l["retorno_fixo"]["valor"] == 0 for l in mega["linhas"])
 
 
+def test_purge_apaga_dados_da_loteria_removida():
+    """A Lotomania saiu do app: sorteios, meta e APOSTAS dela são apagados
+    uma vez só, e o marcador impede que rode de novo."""
+    with make_client() as c:
+        sid = _login(c)
+        conta = db.get_session(sid)["account_id"]
+        # dados como estariam num banco anterior à remoção
+        db.upsert_draws(
+            [{"concurso": 970001, "data": "2026-01-01", "dezenas": list(range(0, 20))}], "loto"
+        )
+        db.upsert_bet(conta, {
+            "id": "bet-loto-antiga", "loteria": "loto", "concurso": 970001,
+            "origem": "manual", "estrategia": None,
+            "dezenas": list(range(0, 50)), "criado_em": "2026-01-01",
+        })
+        db.set_meta("proximo:loto", {"concurso": 970002})
+        db.set_meta("purge_loterias", [])  # força a limpeza a rodar de novo
+        assert db.count_draws("loto") == 1
+        assert any(b["loteria"] == "loto" for b in db.list_bets(conta))
+
+        db._purge_loterias_removidas()
+
+        assert db.count_draws("loto") == 0
+        assert not any(b["loteria"] == "loto" for b in db.list_bets(conta))
+        assert db.get_meta("proximo:loto") is None
+        assert "loto" in db.get_meta("purge_loterias")
+
+        # a Mega e a Lotofácil ficam intactas
+        db.upsert_bet(conta, {
+            "id": "bet-mega-viva", "loteria": "mega", "concurso": 970003,
+            "origem": "manual", "estrategia": None,
+            "dezenas": [1, 2, 3, 4, 5, 6], "criado_em": "2026-01-01",
+        })
+        db._purge_loterias_removidas()  # idempotente: não roda de novo
+        assert any(b["id"] == "bet-mega-viva" for b in db.list_bets(conta))
+
+
 def test_odds_carteira_apostas_separadas():
     """N bilhetes simples separados: P = 1 - (1-p)^N por faixa."""
     with make_client() as c:

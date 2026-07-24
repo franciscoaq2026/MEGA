@@ -6,6 +6,10 @@ import { HashRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
 import { consumeLoginTokenFromUrl } from './lib/auth.js'
+import { limparLoteriasRemovidas } from './lib/bets.js'
+
+// Apaga do navegador os jogos de loterias que saíram do app. Roda uma vez só.
+limparLoteriasRemovidas()
 
 function render() {
   createRoot(document.getElementById('root')).render(

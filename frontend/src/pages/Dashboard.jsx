@@ -73,9 +73,12 @@ export default function Dashboard() {
                   </span>
                   {status.proximo.acumulado ? ' (acumulado)' : ''}
                 </p>
-                {/* A data vem do payload do concurso anterior; se a Caixa
-                    remarca o sorteio depois, o campo envelhece sem aviso. */}
-                {!status.proximo.data && status.proximo.estimativa != null && (
+                {/* A data vem do payload do concurso anterior. Quando a Caixa
+                    remarca um sorteio, o portal muda mas a API não — conferido
+                    em 25/07/2026: a API dizia 25/07 para o concurso 3745 da
+                    Lotofácil enquanto o portal marcava domingo 26/07. Por isso
+                    o link de conferência aparece SEMPRE, não só quando vence. */}
+                {!status.proximo.data && status.proximo.estimativa != null ? (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
                     {status.proximo.data_vencida
                       ? 'A data que a Caixa informou já passou — o sorteio deve ter sido remarcado. '
@@ -89,6 +92,20 @@ export default function Dashboard() {
                       Conferir no site da Caixa
                     </a>
                   </p>
+                ) : (
+                  status.proximo.data && (
+                    <p className="text-[11px] text-zinc-400">
+                      data conforme a API da Caixa — sorteios podem ser remarcados,{' '}
+                      <a
+                        href="https://loterias.caixa.gov.br/Paginas/default.aspx"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline hover:text-zinc-600"
+                      >
+                        confira no portal
+                      </a>
+                    </p>
+                  )
                 )}
               </div>
             ) : (

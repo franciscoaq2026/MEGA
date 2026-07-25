@@ -16,17 +16,54 @@ const TABS = [
   ['termometro', '🌡️ Termômetro'],
 ]
 
-const FILTROS = [
-  ['soma', 'Soma das dezenas', 'A soma dos números do jogo. Os sorteios costumam somar entre ~132 e 234 (média 183). Este filtro descarta jogos fora da faixa que você definir. É cosmético — não muda a chance.'],
-  ['pares', 'Quantidade de pares', 'Quantos números pares o jogo tem. O comum é 1 a 5 pares. Só organiza a “cara” do jogo; não altera a probabilidade.'],
-  ['primos', 'Números primos', 'Quantos primos (2, 3, 5, 7, 11, 13…) o jogo tem. Típico: 0 a 3. Cosmético.'],
-  ['moldura', 'Dezenas na moldura', 'Quantos números caem na borda do volante (primeira/última linha ou coluna). Puro padrão visual do cartão.'],
-  ['baixas', 'Dezenas baixas (1–30)', 'Quantos números são da metade de baixo (1 a 30). Serve para equilibrar baixas × altas. Cosmético.'],
-  ['repetidas_anterior', 'Repetidas do último sorteio', 'Quantos números do seu jogo saíram no concurso anterior. Normalmente 0 ou 1 número se repete de um sorteio para o outro.'],
-]
+// Catálogo de filtros. A faixa típica de cada um vem do histórico REAL da
+// loteria (endpoint /analysis/ranges), então os textos não citam números fixos.
+const FILTROS_BASE = {
+  soma: ['Soma das dezenas', 'A soma dos números do jogo. A faixa típica abaixo é calculada do histórico real desta loteria. Descarta jogos fora do intervalo que você definir — é cosmético, não muda a chance.'],
+  pares: ['Quantidade de pares', 'Quantos números pares o jogo tem. Só organiza a “cara” do jogo; não altera a probabilidade.'],
+  primos: ['Números primos', 'Quantos primos (2, 3, 5, 7, 11, 13…) o jogo tem. Cosmético.'],
+  moldura: ['Dezenas na moldura', 'Quantos números caem na borda do volante (primeira/última linha ou coluna). Puro padrão visual do cartão.'],
+  miolo: ['Dezenas no miolo', 'Quantos números caem no centro do volante, fora da borda. No volante 5x5 da Lotofácil o miolo são só 9 dezenas (7, 8, 9, 12, 13, 14, 17, 18, 19). Cosmético.'],
+  baixas: ['Dezenas baixas', 'Quantos números vêm da metade de baixo do volante. Serve para equilibrar baixas × altas. Cosmético.'],
+  multiplos_3: ['Múltiplos de 3', 'Quantos números do jogo são divisíveis por 3. Cosmético.'],
+  repetidas_anterior: ['Repetidas do último sorteio', 'Quantos números do seu jogo saíram no concurso anterior.'],
+}
 
-function parseDezenas(txt) {
-  return [...new Set((txt.match(/\d+/g) || []).map(Number).filter((n) => n >= 1 && n <= 60))]
+// Cada loteria filtra pelo que de fato discrimina nela. A Lotofácil ganha
+// "miolo" e perde "consecutivos": marcar 15 de 25 força sequências em todo
+// jogo (4+ seguidos saem em 87% dos sorteios), então o filtro não separaria nada.
+const FILTROS_POR_LOTERIA = {
+  mega: ['soma', 'pares', 'primos', 'moldura', 'baixas', 'multiplos_3', 'repetidas_anterior'],
+  lofa: ['soma', 'pares', 'primos', 'moldura', 'miolo', 'baixas', 'multiplos_3', 'repetidas_anterior'],
+}
+
+// Ajuda específica que só faz sentido em uma loteria.
+const AJUDA_POR_LOTERIA = {
+  lofa: {
+    repetidas_anterior:
+      'Quantos números do seu jogo saíram no concurso anterior. Na Lotofácil este é o padrão mais estável da modalidade: como 15 das 25 dezenas saem a cada sorteio, tipicamente 9 se repetem do concurso anterior.',
+  },
+  mega: {
+    repetidas_anterior:
+      'Quantos números do seu jogo saíram no concurso anterior. Na Mega normalmente 0 ou 1 número se repete de um sorteio para o outro.',
+  },
+}
+
+function filtrosDaLoteria(cfg) {
+  const chaves = FILTROS_POR_LOTERIA[cfg.code] || FILTROS_POR_LOTERIA.mega
+  const extra = AJUDA_POR_LOTERIA[cfg.code] || {}
+  return chaves.map((k) => {
+    const [label, help] = FILTROS_BASE[k]
+    return [k, label, extra[k] || help]
+  })
+}
+
+function parseDezenas(txt, cfg) {
+  return [
+    ...new Set(
+      (txt.match(/\d+/g) || []).map(Number).filter((n) => n >= cfg.min && n <= cfg.max),
+    ),
+  ]
 }
 
 function useProximoConcurso() {
@@ -127,8 +164,12 @@ function RangeFilter({ label, help, info, value, onChange }) {
 }
 
 function GeradorAvancado({ ranges }) {
+  const { cfg } = useLottery()
+  const FILTROS = useMemo(() => filtrosDaLoteria(cfg), [cfg])
+  // Consecutivos só filtra onde discrimina (ver FILTROS_POR_LOTERIA).
+  const usaConsecutivos = cfg.code === 'mega'
   const r = ranges?.ranges || {}
-  const [dezenas, setDezenas] = useState(6)
+  const [dezenas, setDezenas] = useState(cfg.escolher)
   const [jogos, setJogos] = useState(5)
   const [antiRateio, setAntiRateio] = useState(true)
   const [consecMax, setConsecMax] = useState(3)
@@ -154,12 +195,19 @@ function GeradorAvancado({ ranges }) {
     setBusy(true)
     setError(null)
     try {
-      const payload = { jogos, dezenas, anti_rateio: antiRateio, filtros: {}, incluir: parseDezenas(incluir), excluir: parseDezenas(excluir) }
+      const payload = {
+        jogos,
+        dezenas,
+        anti_rateio: antiRateio,
+        filtros: {},
+        incluir: parseDezenas(incluir, cfg),
+        excluir: parseDezenas(excluir, cfg),
+      }
       for (const [k] of FILTROS) {
         const f = filtros[k]
         if (f?.enabled) payload.filtros[k] = { min: Number(f.min), max: Number(f.max) }
       }
-      payload.filtros.consecutivos_max = Number(consecMax)
+      if (usaConsecutivos) payload.filtros.consecutivos_max = Number(consecMax)
       setResult(await apiPost('/generate-advanced', payload))
     } catch (e) {
       setError(e.message)
@@ -185,24 +233,26 @@ function GeradorAvancado({ ranges }) {
               onChange={(v) => setFiltros((prev) => ({ ...prev, [k]: v }))}
             />
           ))}
-          <div className="border border-zinc-200 rounded-lg p-2.5">
-            <p className="text-sm font-medium inline-flex items-center gap-1.5">
-              Máx. de consecutivos
-              <Help text="Limita sequências como 21-22-23. Ex.: “até 3 seguidos” evita jogos com muitos números em fila. Só afeta a aparência do jogo." />
-            </p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">evita sequências longas</p>
-            <select
-              value={consecMax}
-              onChange={(e) => setConsecMax(e.target.value)}
-              className="mt-1.5 w-full border border-zinc-300 rounded px-1.5 py-1 text-sm bg-white"
-            >
-              {[2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>
-                  até {n} seguidos
-                </option>
-              ))}
-            </select>
-          </div>
+          {usaConsecutivos && (
+            <div className="border border-zinc-200 rounded-lg p-2.5">
+              <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                Máx. de consecutivos
+                <Help text="Limita sequências como 21-22-23. Ex.: “até 3 seguidos” evita jogos com muitos números em fila. Só afeta a aparência do jogo." />
+              </p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">evita sequências longas</p>
+              <select
+                value={consecMax}
+                onChange={(e) => setConsecMax(e.target.value)}
+                className="mt-1.5 w-full border border-zinc-300 rounded px-1.5 py-1 text-sm bg-white"
+              >
+                {[2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    até {n} seguidos
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="grid sm:grid-cols-2 gap-3 mt-3">
@@ -226,7 +276,7 @@ function GeradorAvancado({ ranges }) {
             <input
               value={excluir}
               onChange={(e) => setExcluir(e.target.value)}
-              placeholder="ex: 4, 22, 60"
+              placeholder={`ex: 4, 22, ${cfg.max}`}
               className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 text-sm"
             />
           </label>
@@ -250,14 +300,17 @@ function GeradorAvancado({ ranges }) {
           <label className="text-sm">
             <span className="text-zinc-600 inline-flex items-center gap-1.5">
               Dezenas por jogo
-              <Help text="Tamanho de cada aposta (6 a 20). 6 = aposta simples. Mais dezenas cobrem mais números, mas encarecem muito a aposta." />
+              <Help text={`Tamanho de cada aposta (${cfg.escolher} a ${cfg.maxEscolher}). ${cfg.escolher} = aposta simples. Mais dezenas cobrem mais números e aumentam a chance de verdade, mas encarecem muito a aposta.`} />
             </span>
             <select
               value={dezenas}
               onChange={(e) => setDezenas(Number(e.target.value))}
               className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
             >
-              {Array.from({ length: 15 }, (_, i) => 6 + i).map((k) => (
+              {Array.from(
+                { length: cfg.maxEscolher - cfg.escolher + 1 },
+                (_, i) => cfg.escolher + i,
+              ).map((k) => (
                 <option key={k} value={k}>
                   {k}
                 </option>
@@ -322,9 +375,16 @@ function GeradorAvancado({ ranges }) {
 /* ------------------------------- Fechamento ------------------------------- */
 
 function Fechamento() {
+  const { cfg } = useLottery()
+  // Faixas que servem de garantia: todas abaixo do acerto máximo.
+  const garantias = useMemo(
+    () => cfg.premios.map((p) => p.ac).filter((ac) => ac < cfg.escolher).sort((a, b) => a - b),
+    [cfg],
+  )
+  const minDezenas = cfg.escolher + 1
   const [dezenas, setDezenas] = useState([])
   const [tipo, setTipo] = useState('reduzida')
-  const [garantia, setGarantia] = useState(4)
+  const [garantia, setGarantia] = useState(garantias[garantias.length - 1])
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -346,16 +406,16 @@ function Fechamento() {
     <div className="space-y-4">
       <Card
         title="Fechamento / desdobramento"
-        subtitle="Escolha de 7 a 20 dezenas. O app monta um conjunto de jogos com garantia matemática — e verifica a garantia antes de mostrar."
+        subtitle={`Escolha de ${minDezenas} a ${cfg.maxEscolher} dezenas. O app monta um conjunto de jogos com garantia matemática — e verifica a garantia antes de mostrar.`}
       >
-        <Volante selected={dezenas} onChange={setDezenas} max={20} />
+        <Volante selected={dezenas} onChange={setDezenas} max={cfg.maxEscolher} />
         <p className="text-xs text-zinc-500 mt-2">{dezenas.length} dezenas selecionadas</p>
 
         <div className="grid sm:grid-cols-2 gap-3 mt-3">
           <label className="text-sm">
             <span className="text-zinc-600 inline-flex items-center gap-1.5">
               Tipo
-              <Help text="Roda completa = TODAS as combinações possíveis das suas dezenas (garantia máxima, mas gera muitos jogos e custa caro). Reduzido = bem menos jogos, com uma garantia menor (quadra ou quina)." />
+              <Help text="Roda completa = TODAS as combinações possíveis das suas dezenas (garantia máxima, mas gera muitos jogos e custa caro). Reduzido = bem menos jogos, com uma garantia menor." />
             </span>
             <select
               value={tipo}
@@ -370,15 +430,18 @@ function Fechamento() {
             <label className="text-sm">
               <span className="text-zinc-600 inline-flex items-center gap-1.5">
                 Garantia
-                <Help text="O prêmio garantido SE as 6 dezenas sorteadas estiverem todas entre as que você escolheu. Atenção: não garante que você vá acertar a sena — garante cobertura das suas dezenas. Ex.: garantir quadra = se as 6 saírem entre as suas, um dos jogos com certeza terá pelo menos 4." />
+                <Help text={`O prêmio garantido SE as ${cfg.sorteadas} dezenas sorteadas estiverem todas entre as que você escolheu. Atenção: não garante o prêmio máximo — garante cobertura das suas dezenas. Se as ${cfg.sorteadas} saírem entre as suas, um dos jogos com certeza terá pelo menos o número de acertos escolhido aqui.`} />
               </span>
               <select
                 value={garantia}
                 onChange={(e) => setGarantia(Number(e.target.value))}
                 className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
               >
-                <option value={4}>Garante QUADRA (se as 6 saírem entre as suas)</option>
-                <option value={5}>Garante QUINA (se as 6 saírem entre as suas)</option>
+                {garantias.map((ac) => (
+                  <option key={ac} value={ac}>
+                    Garante {ac} acertos (se as {cfg.sorteadas} saírem entre as suas)
+                  </option>
+                ))}
               </select>
             </label>
           )}
@@ -386,13 +449,15 @@ function Fechamento() {
 
         <button
           onClick={fechar}
-          disabled={busy || dezenas.length < 7}
+          disabled={busy || dezenas.length < minDezenas}
           className="mt-4 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
         >
           {busy ? 'Montando…' : 'Montar fechamento'}
         </button>
-        {dezenas.length > 0 && dezenas.length < 7 && (
-          <p className="text-xs text-zinc-500 mt-2">selecione ao menos 7 dezenas</p>
+        {dezenas.length > 0 && dezenas.length < minDezenas && (
+          <p className="text-xs text-zinc-500 mt-2">
+            selecione ao menos {minDezenas} dezenas (mais que a aposta simples)
+          </p>
         )}
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
       </Card>
@@ -414,9 +479,9 @@ function Fechamento() {
                   : 'bg-red-50 border-red-200 text-red-700'
               }`}
             >
-              {result.garantia_verificada ? '✓' : '✗'} Garante ao menos uma{' '}
-              <strong>{result.garantia_faixa.toUpperCase()}</strong> se as 6 dezenas sorteadas
-              estiverem entre as suas {result.dezenas_escolhidas.length} escolhidas
+              {result.garantia_verificada ? '✓' : '✗'} Garante ao menos{' '}
+              <strong>{result.garantia_faixa.toUpperCase()}</strong> se as {cfg.sorteadas} dezenas
+              sorteadas estiverem entre as suas {result.dezenas_escolhidas.length} escolhidas
               {result.garantia_verificada ? ' (garantia verificada por força bruta).' : '.'}
             </div>
           ) : (
@@ -450,6 +515,7 @@ function Fechamento() {
 /* ------------------------------- Termômetro ------------------------------- */
 
 function Termometro() {
+  const { cfg } = useLottery()
   const [dezenas, setDezenas] = useState([])
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -479,19 +545,21 @@ function Termometro() {
             <Help text="Cole um jogo (seu ou de qualquer fonte) e receba uma nota de 0 a 100 de quanto ele “se parece” com os sorteios típicos. IMPORTANTE: mede tipicidade/estética, NÃO chance de ganhar — um jogo nota 100 tem exatamente a mesma chance de um nota 10." />
           </span>
         }
-        subtitle="Selecione um jogo (6 a 20 dezenas) e veja o quão dentro dos padrões históricos ele está. Mede tipicidade — não chance de ganhar."
+        subtitle={`Selecione um jogo (${cfg.escolher} a ${cfg.maxEscolher} dezenas) e veja o quão dentro dos padrões históricos ele está. Mede tipicidade — não chance de ganhar.`}
       >
-        <Volante selected={dezenas} onChange={setDezenas} max={20} />
+        <Volante selected={dezenas} onChange={setDezenas} max={cfg.maxEscolher} />
         <p className="text-xs text-zinc-500 mt-2">{dezenas.length} dezenas</p>
         <button
           onClick={avaliar}
-          disabled={busy || dezenas.length < 6}
+          disabled={busy || dezenas.length < cfg.escolher}
           className="mt-3 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
         >
           {busy ? 'Avaliando…' : 'Avaliar jogo'}
         </button>
-        {dezenas.length > 0 && dezenas.length < 6 && (
-          <p className="text-xs text-zinc-500 mt-2">selecione ao menos 6 dezenas</p>
+        {dezenas.length > 0 && dezenas.length < cfg.escolher && (
+          <p className="text-xs text-zinc-500 mt-2">
+            selecione ao menos {cfg.escolher} dezenas
+          </p>
         )}
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
       </Card>

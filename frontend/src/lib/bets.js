@@ -11,6 +11,25 @@ function keyFor(loteria = 'mega') {
   return loteria === 'mega' ? 'megasena.bets.v1' : `loterias.bets.${loteria}.v1`
 }
 
+// Loterias que saíram do app. Os jogos guardados no navegador são apagados
+// uma vez só — o mesmo que o backend faz no banco (db.LOTERIAS_REMOVIDAS).
+// Lista explícita de propósito: varrer "toda chave desconhecida" apagaria
+// dados de uma loteria que estivesse só temporariamente fora da config.
+const LOTERIAS_REMOVIDAS = ['loto'] // Lotomania — substituída pela Lotofácil
+const MARCADOR_LIMPEZA = 'loterias.purge.v1'
+
+export function limparLoteriasRemovidas() {
+  try {
+    const feito = JSON.parse(localStorage.getItem(MARCADOR_LIMPEZA)) || []
+    const pendentes = LOTERIAS_REMOVIDAS.filter((c) => !feito.includes(c))
+    if (!pendentes.length) return
+    for (const code of pendentes) localStorage.removeItem(keyFor(code))
+    localStorage.setItem(MARCADOR_LIMPEZA, JSON.stringify([...feito, ...pendentes]))
+  } catch {
+    // localStorage indisponível (modo privado): nada a fazer
+  }
+}
+
 export function loadBets(loteria = 'mega') {
   try {
     const raw = JSON.parse(localStorage.getItem(keyFor(loteria)))

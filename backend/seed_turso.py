@@ -8,16 +8,84 @@ Uso:
     export TURSO_DATABASE_URL="libsql://seu-banco.turso.io"
     export TURSO_AUTH_TOKEN="seu-token"
 
-    # opção A — baixar tudo da API da Caixa (com fallback):
+    # todas as loterias, a partir do histórico embutido no repositório
+    # (instantâneo, sem rede) e completando o que falta pela API:
     python seed_turso.py
 
-    # opção B — carregar de um CSV (concurso,data,dezena1..dezena6):
-    python seed_turso.py caminho/para/megasena.csv
+    # só uma loteria:
+    python seed_turso.py --loteria lofa
+
+    # carregar de um CSV (concurso,data,dezena1..dezenaN):
+    python seed_turso.py --loteria mega caminho/para/megasena.csv
 """
 
 import asyncio
 import os
 import sys
+
+
+def _args() -> tuple[list[str], str | None]:
+    """Devolve (loterias, caminho_csv) a partir da linha de comando."""
+    from app import lotteries
+
+    argv = sys.argv[1:]
+    loteria = None
+    if "--loteria" in argv:
+        i = argv.index("--loteria")
+        loteria = argv[i + 1] if i + 1 < len(argv) else None
+        del argv[i : i + 2]
+        if not lotteries.is_valid(loteria):
+            sys.exit(f"Loteria inválida: {loteria!r}. Use uma de: {list(lotteries.LOTERIAS)}")
+    codes = [loteria] if loteria else list(lotteries.LOTERIAS)
+    return codes, (argv[0] if argv else None)
+
+
+async def semear(code: str) -> None:
+    from app import db, lotteries
+    from app.fetcher import FetchError, fetch_latest, fetch_many
+
+    cfg = lotteries.get_loteria(code)
+    print(f"\n=== {cfg['nome']} ({code}) ===")
+
+    # 1) histórico embutido: instantâneo e sem depender de rede
+    seed = db.load_bundled_seed(code)
+    if seed:
+        novos = [s for s in seed if s["concurso"] not in db.concursos_com_data(code)]
+        if novos:
+            db.upsert_draws(novos, code)
+        print(f"Seed embutido: {len(seed)} concursos ({len(novos)} novos no banco).")
+
+    # 2) completa com o que for mais novo que o seed
+    try:
+        latest = await fetch_latest(code)
+    except FetchError as e:
+        print(f"APIs indisponíveis ({e}); ficou só com o seed embutido.")
+        print(f"Total no banco: {db.count_draws(code)} sorteios.")
+        return
+
+    db.upsert_draws([latest], code)
+    prox_key = "proximo" if code == "mega" else f"proximo:{code}"
+    db.set_meta(prox_key, latest["proximo"])
+    print(f"Último concurso remoto: {latest['concurso']}")
+
+    existentes = db.concursos_com_data(code)
+    faltando = [n for n in range(1, latest["concurso"]) if n not in existentes]
+    if not faltando:
+        print(f"Nada a baixar. Total no banco: {db.count_draws(code)} sorteios.")
+        return
+    print(f"Faltam {len(faltando)} concursos — baixando…")
+
+    lote = 200
+    for i in range(0, len(faltando), lote):
+        parte = faltando[i : i + lote]
+        obtidos, erros = await fetch_many(parte, code)
+        db.upsert_draws(obtidos, code)
+        print(
+            f"  {min(i + lote, len(faltando))}/{len(faltando)} "
+            f"(+{len(obtidos)}, {len(erros)} falhas)"
+        )
+
+    print(f"Pronto. Total no banco: {db.count_draws(code)} sorteios.")
 
 
 async def main() -> None:
@@ -26,41 +94,23 @@ async def main() -> None:
 
     # Importa depois de conferir o env (db.py decide o backend na importação).
     from app import db
-    from app.fetcher import fetch_latest, fetch_many
 
+    codes, csv_path = _args()
     print(f"Banco: {db.backend_name()}  ({os.environ['TURSO_DATABASE_URL']})")
     db.init_db()
 
-    if len(sys.argv) > 1:  # opção B: CSV
+    if csv_path:
         from app.csv_utils import parse_draws_csv
 
-        path = sys.argv[1]
-        rows, errors = parse_draws_csv(open(path, encoding="utf-8-sig").read())
-        db.upsert_draws(rows)
+        if len(codes) > 1:
+            sys.exit("Com CSV, informe a loteria: python seed_turso.py --loteria mega arquivo.csv")
+        rows, errors = parse_draws_csv(open(csv_path, encoding="utf-8-sig").read())
+        db.upsert_draws(rows, codes[0])
         print(f"Importados {len(rows)} sorteios do CSV ({len(errors)} ignorados).")
         return
 
-    # opção A: API da Caixa
-    latest = await fetch_latest()
-    db.upsert_draws([latest])
-    db.set_meta("proximo", latest["proximo"])
-    print(f"Último concurso remoto: {latest['concurso']}")
-
-    existentes = db.all_concursos()
-    faltando = [n for n in range(1, latest["concurso"]) if n not in existentes]
-    print(f"Faltam {len(faltando)} concursos — baixando…")
-
-    lote = 200
-    for i in range(0, len(faltando), lote):
-        parte = faltando[i : i + lote]
-        obtidos, erros = await fetch_many(parte)
-        db.upsert_draws(obtidos)
-        print(
-            f"  {min(i + lote, len(faltando))}/{len(faltando)} "
-            f"(+{len(obtidos)}, {len(erros)} falhas)"
-        )
-
-    print(f"Pronto. Total no banco: {db.count_draws()} sorteios.")
+    for code in codes:
+        await semear(code)
 
 
 if __name__ == "__main__":

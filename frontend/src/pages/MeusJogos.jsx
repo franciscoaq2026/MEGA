@@ -9,10 +9,17 @@ import Card from '../components/Card.jsx'
 import Volante from '../components/Volante.jsx'
 import { formatDate } from '../lib/format.js'
 
+// Cor por faixa premiada. As chaves vêm do backend (Mega: sena/quina/quadra;
+// Lotofácil: "15 acertos" … "11 acertos").
 const FAIXA_STYLE = {
   sena: 'bg-emerald-600 text-white',
   quina: 'bg-amber-500 text-white',
   quadra: 'bg-blue-600 text-white',
+  '15 acertos': 'bg-purple-600 text-white',
+  '14 acertos': 'bg-purple-500 text-white',
+  '13 acertos': 'bg-amber-500 text-white',
+  '12 acertos': 'bg-blue-600 text-white',
+  '11 acertos': 'bg-blue-500 text-white',
 }
 
 const ORIGEM_LABEL = { manual: 'Meu jogo (manual)', app: 'Jogo do app' }

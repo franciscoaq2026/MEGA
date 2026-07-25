@@ -22,11 +22,11 @@ def _pool(loteria: str):
 
 
 def _somente_avancada(loteria: str) -> None:
-    if not lotteries.get_loteria(loteria)["avancada"]:
+    cfg = lotteries.get_loteria(loteria)
+    if not cfg["avancada"]:
         raise HTTPException(
             409,
-            "esta análise ainda é específica da Mega-Sena; para esta loteria use "
-            "frequência e atraso.",
+            f"{cfg['nome']} ainda não tem análise avançada; use frequência e atraso.",
         )
 
 
@@ -71,11 +71,27 @@ def pairs(
     return stats.top_pairs(_draws(lot), limit, numbers=numbers, drawn=drawn)
 
 
+@router.get("/aleatoriedade")
+def aleatoriedade(loteria: str | None = Query(default=None)):
+    """Teste de aleatoriedade: qui-quadrado das frequências + distribuição
+    observada de cada indicador contra a teórica. É a evidência, com os dados
+    do próprio usuário, de que não há padrão a explorar."""
+    lot = _lot(loteria)
+    draws = _draws(lot)
+    try:
+        return {
+            "chi_square": stats.chi_square_frequencias(draws, lot),
+            **stats.indicadores_vs_teoria(draws, lot),
+        }
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @router.get("/xray/{concurso}")
 def xray(concurso: int, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
     _somente_avancada(lot)
     try:
-        return stats.xray(_draws(lot), concurso)
+        return stats.xray(_draws(lot), concurso, lot)
     except ValueError as e:
         raise HTTPException(404, str(e)) from e

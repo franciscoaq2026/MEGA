@@ -5,6 +5,8 @@ import Hub from './pages/Hub.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Sorteios from './pages/Sorteios.jsx'
 import GerarJogos from './pages/GerarJogos.jsx'
+import Probabilidades from './pages/Probabilidades.jsx'
+import Comparar from './pages/Comparar.jsx'
 import Fabrica from './pages/Fabrica.jsx'
 import MeusJogos from './pages/MeusJogos.jsx'
 
@@ -17,7 +19,11 @@ export default function App() {
       {/* Hub: escolha da loteria */}
       <Route index element={<Hub />} />
 
-      {/* Cada loteria vive sob /:loteria (ex.: /mega, /loto) */}
+      {/* Comparativo das 11 modalidades da Caixa — vive acima das loterias,
+          porque fala de todas, inclusive as que o app não opera. */}
+      <Route path="comparar" element={<Comparar />} />
+
+      {/* Cada loteria vive sob /:loteria (ex.: /mega, /lofa) */}
       <Route path=":loteria" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="sorteios" element={<Sorteios />} />
@@ -31,6 +37,7 @@ export default function App() {
             </Suspense>
           }
         />
+        <Route path="probabilidades" element={<Probabilidades />} />
         <Route path="gerar" element={<GerarJogos />} />
         <Route path="fabrica" element={<Fabrica />} />
         <Route path="meus-jogos" element={<MeusJogos />} />

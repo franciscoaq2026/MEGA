@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from .. import analysis, checker, db, generator, lotteries
 
@@ -12,14 +12,13 @@ def _lot(code: str | None) -> str:
     return lotteries.get_loteria(code)["code"]
 
 
-def _somente_avancada(loteria: str) -> None:
+def _somente_avancada(loteria: str) -> dict:
     cfg = lotteries.get_loteria(loteria)
     if not cfg["avancada"]:
         raise HTTPException(
-            409,
-            f"recurso disponível apenas para loterias com análise avançada "
-            f"(no momento, só a Mega-Sena); {cfg['nome']} não tem.",
+            409, f"{cfg['nome']} ainda não tem análise avançada (Fábrica)."
         )
+    return cfg
 
 
 def _draws_or_409(loteria: str = "mega") -> list[dict]:
@@ -29,18 +28,35 @@ def _draws_or_409(loteria: str = "mega") -> list[dict]:
     return draws
 
 
-def _valida_dezenas(v: list[int], tamanho_min: int = 1) -> list[int]:
-    if len(set(v)) != len(v) or not all(1 <= n <= 60 for n in v):
-        raise ValueError("dezenas devem ser únicas e entre 1 e 60")
+def _valida_dezenas(v: list[int], cfg: dict) -> list[int]:
+    """Dezenas únicas e dentro do volante da loteria (Mega 1–60, Lotofácil 1–25)."""
+    lo, hi = cfg["min_num"], cfg["max_num"]
+    if len(set(v)) != len(v) or not all(lo <= n <= hi for n in v):
+        raise HTTPException(
+            400, f"dezenas devem ser únicas e entre {lo} e {hi} ({cfg['nome']})"
+        )
     return sorted(v)
+
+
+def _valida_tamanho(k: int, cfg: dict, minimo: int | None = None) -> int:
+    """Tamanho da aposta dentro do que a Caixa aceita para a loteria."""
+    lo = cfg["escolher"] if minimo is None else minimo
+    hi = cfg["max_escolher"]
+    if not lo <= k <= hi:
+        raise HTTPException(
+            400, f"{cfg['nome']} aceita de {lo} a {hi} dezenas por aposta (recebido: {k})"
+        )
+    return k
 
 
 class GenerateRequest(BaseModel):
     estrategia: Literal["aleatorio", "frequencia", "atrasados", "balanceado"]
     jogos: int = Field(1, ge=1, le=20)
-    dezenas: int = Field(6, ge=1, le=50)
+    dezenas: int = Field(0, ge=0, le=50)  # 0 = aposta simples da loteria
     anti_rateio: bool = False
-    espelho: bool = False  # Lotomania: gera também o complemento (cobre os 100)
+    # Espalha os jogos (menor sobreposição entre eles). Só faz sentido em
+    # apostas simples separadas — numa aposta múltipla há um bilhete só.
+    espalhar: bool = True
 
 
 @router.get("/strategies")
@@ -48,38 +64,33 @@ def strategies():
     return {"estrategias": generator.ESTRATEGIAS}
 
 
-def _com_espelho(jogos: list[dict], cfg: dict) -> list[dict]:
-    """Para cada jogo, acrescenta o 'espelho' (as dezenas NÃO marcadas). Só faz
-    sentido quando uma aposta cobre metade do volante (Lotomania: 50 de 100),
-    de modo que jogo + espelho cobrem todas as dezenas.
-
-    Fato matemático: jogo e espelho SEMPRE somam o total sorteado de acertos
-    (ex.: 20). Isso amplia a chance de ganhar ALGUM prêmio (dois bilhetes que
-    não se sobrepõem) e, se um fizer o acerto máximo, o outro faz 0 (e ambos
-    pagam). NÃO aumenta a probabilidade do prêmio principal — essa é fixa."""
-    pool = set(range(cfg["min_num"], cfg["max_num"] + 1))
-    out: list[dict] = []
-    for i, j in enumerate(jogos):
-        base = dict(j, espelho=False, par=i)
-        espelho_dz = sorted(pool - set(j["dezenas"]))
-        espelho = {
-            "dezenas": espelho_dz,
-            "soma": sum(espelho_dz),
-            "pares": sum(1 for n in espelho_dz if n % 2 == 0),
-            "padroes_populares": [],
-            "espelho": True,
-            "par": i,
-        }
-        out.append(base)
-        out.append(espelho)
-    return out
+@router.get("/config")
+def config(loteria: str | None = Query(default=None)):
+    """Config da loteria que o frontend precisa para montar volante e limites."""
+    cfg = lotteries.get_loteria(_lot(loteria))
+    return {
+        "code": cfg["code"],
+        "nome": cfg["nome"],
+        "min_num": cfg["min_num"],
+        "max_num": cfg["max_num"],
+        "escolher": cfg["escolher"],
+        "max_escolher": cfg["max_escolher"],
+        "sorteadas": cfg["sorteadas"],
+        "cols": cfg["cols"],
+        "preco": cfg["preco"],
+        "avancada": cfg["avancada"],
+        "faixas": cfg["faixas"],
+        "max_roda_completa": cfg["max_roda_completa"],
+        "max_reduzida": cfg["max_reduzida"],
+        "garantias": [g for g in sorted(cfg["faixas"]) if g < cfg["escolher"]],
+    }
 
 
 @router.post("/generate")
 def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
     cfg = lotteries.get_loteria(lot)
-    dezenas = req.dezenas if cfg["escolher"] <= req.dezenas <= cfg["max_escolher"] else cfg["escolher"]
+    dezenas = cfg["escolher"] if not req.dezenas else _valida_tamanho(req.dezenas, cfg)
     draws = db.get_all_draws_asc(lot)
     if not draws and req.estrategia != "aleatorio":
         raise HTTPException(
@@ -87,29 +98,57 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
             "cache vazio: sincronize os sorteios para usar estratégias baseadas no histórico "
             "(o aleatório puro funciona sem histórico)",
         )
-    jogos = generator.gerar(draws, req.estrategia, req.jogos, dezenas, req.anti_rateio, loteria=lot)
-    # Espelho: só quando uma aposta cobre metade do volante (2*escolher == total).
-    espelho_ok = req.espelho and 2 * cfg["escolher"] == cfg["total"]
-    if espelho_ok:
-        jogos = _com_espelho(jogos, cfg)
+    # Espalhar só tem efeito entre bilhetes distintos do mesmo tamanho da
+    # aposta simples; numa aposta múltipla o usuário compra um bilhete só.
+    espalhar = req.espalhar and req.jogos > 1 and dezenas == cfg["escolher"]
+    jogos = generator.gerar(
+        draws, req.estrategia, req.jogos, dezenas, req.anti_rateio,
+        loteria=lot, espalhar=espalhar,
+    )
     return {
         "estrategia": req.estrategia,
         "descricao": generator.ESTRATEGIAS[req.estrategia],
         "anti_rateio": req.anti_rateio,
-        "espelho": espelho_ok,
+        "espalhar": espalhar,
+        "dezenas": dezenas,
         "jogos": jogos,
+        "carteira": generator.odds_carteira(req.jogos, lot) if dezenas == cfg["escolher"] else None,
         "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
     }
 
 
-@router.get("/odds")
-def odds(
-    dezenas: int = Query(6, ge=6, le=20),
-    preco_simples: float = Query(6.0, ge=0, le=1000),
+@router.get("/odds/carteira")
+def odds_carteira(
+    jogos: int = Query(1, ge=1, le=100000),
     loteria: str | None = Query(default=None),
 ):
-    _somente_avancada(_lot(loteria))
-    return generator.odds(dezenas, preco_simples)
+    """Chance acumulada de N apostas simples separadas (1 - (1-p)^N)."""
+    return generator.odds_carteira(jogos, _lot(loteria))
+
+
+@router.get("/odds")
+def odds(
+    dezenas: int = Query(0, ge=0, le=50),
+    preco_simples: float | None = Query(None, ge=0, le=1000),
+    loteria: str | None = Query(default=None),
+):
+    """Probabilidade real por faixa e custo de uma aposta de N dezenas.
+
+    Este é o único número do app que muda de verdade com a escolha do usuário:
+    mais dezenas = mais combinações cobertas = mais chance, proporcional ao custo.
+    """
+    lot = _lot(loteria)
+    cfg = lotteries.get_loteria(lot)
+    k = cfg["escolher"] if not dezenas else _valida_tamanho(dezenas, cfg)
+    return generator.odds(k, preco_simples, lot)
+
+
+@router.get("/odds/table")
+def odds_table(loteria: str | None = Query(default=None)):
+    """Tabela completa de probabilidades: todos os tamanhos de aposta que a
+    Caixa aceita, com custo, chance por faixa, chance de ganhar alguma coisa e
+    o retorno garantido pelas faixas de prêmio fixo."""
+    return generator.odds_table(_lot(loteria))
 
 
 # ---- Fábrica de números: estatísticas avançadas, gerador, termômetro, fechamento ----
@@ -121,7 +160,7 @@ def analysis_ranges(loteria: str | None = Query(default=None)):
     filtros inteligentes e do termômetro."""
     lot = _lot(loteria)
     _somente_avancada(lot)
-    return analysis.historical_ranges(_draws_or_409(lot))
+    return analysis.historical_ranges(_draws_or_409(lot), lot)
 
 
 class Faixa(BaseModel):
@@ -134,13 +173,18 @@ class Filtros(BaseModel):
     pares: Faixa | None = None
     primos: Faixa | None = None
     moldura: Faixa | None = None
+    miolo: Faixa | None = None
     baixas: Faixa | None = None
+    multiplos_3: Faixa | None = None
     repetidas_anterior: Faixa | None = None
-    consecutivos_max: int | None = Field(None, ge=1, le=6)
+    consecutivos_max: int | None = Field(None, ge=1, le=20)
 
     def to_dict(self) -> dict:
         out: dict = {}
-        for k in ("soma", "pares", "primos", "moldura", "baixas", "repetidas_anterior"):
+        for k in (
+            "soma", "pares", "primos", "moldura", "miolo",
+            "baixas", "multiplos_3", "repetidas_anterior",
+        ):
             f = getattr(self, k)
             if f and (f.min is not None or f.max is not None):
                 out[k] = [f.min, f.max]
@@ -151,32 +195,31 @@ class Filtros(BaseModel):
 
 class GenerateAdvancedRequest(BaseModel):
     jogos: int = Field(3, ge=1, le=50)
-    dezenas: int = Field(6, ge=6, le=20)
+    dezenas: int = Field(0, ge=0, le=50)
     filtros: Filtros = Filtros()
     incluir: list[int] = Field(default_factory=list)
     excluir: list[int] = Field(default_factory=list)
     anti_rateio: bool = False
 
-    @field_validator("incluir", "excluir")
-    @classmethod
-    def _dz(cls, v):
-        return _valida_dezenas(v)
-
 
 @router.post("/generate-advanced")
 def generate_advanced(req: GenerateAdvancedRequest, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
-    _somente_avancada(lot)
+    cfg = _somente_avancada(lot)
+    k = cfg["escolher"] if not req.dezenas else _valida_tamanho(req.dezenas, cfg)
+    incluir = _valida_dezenas(req.incluir, cfg)
+    excluir = _valida_dezenas(req.excluir, cfg)
     draws = _draws_or_409(lot)
     try:
         resultado = generator.gerar_avancado(
             draws,
             jogos=req.jogos,
-            dezenas=req.dezenas,
+            dezenas=k,
             filtros=req.filtros.to_dict(),
-            incluir=req.incluir,
-            excluir=req.excluir,
+            incluir=incluir,
+            excluir=excluir,
             anti_rateio=req.anti_rateio,
+            loteria=lot,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -185,22 +228,19 @@ def generate_advanced(req: GenerateAdvancedRequest, loteria: str | None = Query(
 
 
 class ScoreRequest(BaseModel):
-    dezenas: list[int] = Field(min_length=6, max_length=20)
-
-    @field_validator("dezenas")
-    @classmethod
-    def _dz(cls, v):
-        return _valida_dezenas(v)
+    dezenas: list[int] = Field(min_length=1, max_length=50)
 
 
 @router.post("/score")
 def score(req: ScoreRequest, loteria: str | None = Query(default=None)):
     lot = _lot(loteria)
-    _somente_avancada(lot)
+    cfg = _somente_avancada(lot)
+    ds = _valida_dezenas(req.dezenas, cfg)
+    _valida_tamanho(len(ds), cfg)
     draws = _draws_or_409(lot)
-    ranges = analysis.historical_ranges(draws)
+    ranges = analysis.historical_ranges(draws, lot)
     anterior = draws[-1]["dezenas"] if draws else None
-    resultado = analysis.score(req.dezenas, ranges, anterior)
+    resultado = analysis.score(ds, ranges, anterior, lot)
     resultado["aviso"] = (
         "O termômetro mede o quão típico é o jogo — não a chance de ganhar, "
         "que é idêntica para qualquer combinação."
@@ -209,47 +249,55 @@ def score(req: ScoreRequest, loteria: str | None = Query(default=None)):
 
 
 class WheelRequest(BaseModel):
-    dezenas: list[int] = Field(min_length=7, max_length=20)
+    dezenas: list[int] = Field(min_length=2, max_length=50)
     tipo: Literal["completa", "reduzida"] = "reduzida"
-    garantia: Literal[4, 5] = 4
-
-    @field_validator("dezenas")
-    @classmethod
-    def _dz(cls, v):
-        return _valida_dezenas(v)
+    garantia: int | None = None
 
 
 @router.post("/wheel")
 def wheel(req: WheelRequest, loteria: str | None = Query(default=None)):
-    _somente_avancada(_lot(loteria))
-    k = len(req.dezenas)
+    lot = _lot(loteria)
+    cfg = _somente_avancada(lot)
+    ds = _valida_dezenas(req.dezenas, cfg)
+    k = len(ds)
+    escolher = cfg["escolher"]
+    if k <= escolher:
+        raise HTTPException(
+            400,
+            f"o fechamento só faz sentido com MAIS de {escolher} dezenas "
+            f"(a aposta simples da {cfg['nome']}); recebido: {k}",
+        )
+
     if req.tipo == "completa":
-        if k > 11:
+        if k > cfg["max_roda_completa"]:
             raise HTTPException(
                 400,
-                f"roda completa de {k} dezenas geraria {generator.comb(k, 6)} jogos; "
-                "use até 11 dezenas na completa ou escolha o fechamento reduzido.",
+                f"roda completa de {k} dezenas geraria {generator.comb(k, escolher)} jogos; "
+                f"use até {cfg['max_roda_completa']} dezenas na completa ou escolha o "
+                "fechamento reduzido.",
             )
-        return generator.roda_completa(req.dezenas)
-    if k > 15:
+        return generator.roda_completa(ds, lot)
+
+    if k > cfg["max_reduzida"]:
         raise HTTPException(
-            400, "fechamento reduzido aceita até 15 dezenas (acima disso fica lento)."
+            400,
+            f"fechamento reduzido aceita até {cfg['max_reduzida']} dezenas na "
+            f"{cfg['nome']} (acima disso fica lento).",
         )
-    return generator.fechamento_reduzido(req.dezenas, req.garantia)
+    garantias = [g for g in sorted(cfg["faixas"]) if g < escolher]
+    garantia = req.garantia if req.garantia is not None else garantias[-1]
+    if garantia not in garantias:
+        raise HTTPException(
+            400, f"garantia deve ser uma destas faixas da {cfg['nome']}: {garantias}"
+        )
+    return generator.fechamento_reduzido(ds, garantia, lot)
 
 
 class Aposta(BaseModel):
-    # Intervalo permissivo para cobrir todas as loterias (Mega 1–60, 6–20
-    # dezenas; Lotomania 0–99, 50 dezenas). A conferência é só interseção.
+    # Intervalo permissivo para cobrir todas as loterias; a conferência é só
+    # interseção, então dezenas fora do volante simplesmente não pontuam.
     concurso: int = Field(ge=1)
-    dezenas: list[int] = Field(min_length=6, max_length=50)
-
-    @field_validator("dezenas")
-    @classmethod
-    def dezenas_validas(cls, v: list[int]) -> list[int]:
-        if len(set(v)) != len(v) or not all(0 <= n <= 99 for n in v):
-            raise ValueError("dezenas devem ser únicas e estar entre 0 e 99")
-        return sorted(v)
+    dezenas: list[int] = Field(min_length=1, max_length=50)
 
 
 class CheckRequest(BaseModel):
@@ -274,6 +322,6 @@ def backtest(
     _somente_avancada(lot)
     draws = db.get_all_draws_asc(lot)
     try:
-        return checker.backtest(draws, ultimos)
+        return checker.backtest(draws, ultimos, loteria=lot)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e

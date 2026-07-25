@@ -21,11 +21,11 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # onde disponíveis). Serve de fonte para o /sync quando as APIs da Caixa/guidi
 # estão inacessíveis — o caso do Vercel, cujo IP de datacenter é bloqueado.
 SEED_JSON = DATA_DIR / "seed_megasena.json"  # mantido por compatibilidade
-# Seed por loteria (histórico embutido). A Mega tem o histórico completo;
-# a Lotomania começa vazia e é populada pelo sync do navegador do usuário.
+# Seed por loteria (histórico embutido). Ambas trazem o histórico completo até
+# a data do último build; o que vier depois entra pelo /sync.
 SEED_FILES = {
     "mega": DATA_DIR / "seed_megasena.json",
-    "loto": DATA_DIR / "seed_lotomania.json",
+    "lofa": DATA_DIR / "seed_lotofacil.json",
 }
 
 TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
@@ -49,8 +49,8 @@ SCHEMA = (
         d6 INTEGER NOT NULL
     )
     """,
-    # Sorteios de qualquer loteria: dezenas guardadas como JSON (a Lotomania
-    # tem 20 números; a Mega, 6). Chave composta (loteria, concurso).
+    # Sorteios de qualquer loteria: dezenas guardadas como JSON (a Lotofácil
+    # tem 15 números; a Mega, 6). Chave composta (loteria, concurso).
     """
     CREATE TABLE IF NOT EXISTS lottery_draws (
         loteria TEXT NOT NULL,
@@ -182,6 +182,40 @@ def _migrate_legacy_draws() -> None:
     upsert_draws(rows, "mega")
 
 
+# Loterias que já existiram no app e foram removidas. Os dados delas — cache
+# de sorteios, meta e APOSTAS DO USUÁRIO — são apagados uma única vez, com
+# marcador em `meta` para não repetir a cada inicialização.
+#
+# A lista é explícita de propósito: purgar "toda loteria não registrada" faria
+# um erro de digitação em lotteries.py destruir dados de verdade.
+LOTERIAS_REMOVIDAS = ("loto",)  # Lotomania — substituída pela Lotofácil
+
+
+def _purge_loterias_removidas() -> None:
+    feito = get_meta("purge_loterias") or []
+    pendentes = [c for c in LOTERIAS_REMOVIDAS if c not in feito]
+    if not pendentes:
+        return
+    for code in pendentes:
+        try:
+            sorteios = _query(
+                "SELECT COUNT(*) AS n FROM lottery_draws WHERE loteria = ?", (code,)
+            )[0]["n"]
+            apostas = _query("SELECT COUNT(*) AS n FROM bets WHERE loteria = ?", (code,))[0]["n"]
+            _write(
+                [
+                    ("DELETE FROM lottery_draws WHERE loteria = ?", (code,)),
+                    ("DELETE FROM bets WHERE loteria = ?", (code,)),
+                    ("DELETE FROM meta WHERE key = ?", (f"proximo:{code}",)),
+                ]
+            )
+            print(f"[init_db] loteria removida '{code}': apagados {sorteios} sorteios e {apostas} aposta(s)")
+        except Exception as exc:  # noqa: BLE001 - não derruba o init
+            print(f"[init_db] aviso ao limpar '{code}': {exc}")
+            return
+    set_meta("purge_loterias", sorted(set(feito) | set(pendentes)))
+
+
 def _ensure_bets_loteria_column() -> None:
     """Adiciona a coluna bets.loteria se a tabela já existia sem ela
     (bancos criados antes do suporte multi-loteria). Idempotente."""
@@ -200,12 +234,13 @@ def init_db() -> None:
     _write([(stmt, ()) for stmt in SCHEMA])
     _migrate_legacy_draws()
     _ensure_bets_loteria_column()
+    _purge_loterias_removidas()
     # Auto-carrega o seed apenas no SQLite local (desenvolvimento). No Turso o
     # carregamento é feito em lotes pelo endpoint /sync, para não estourar o
     # tempo limite da função no primeiro cold start. Desligável nos testes.
     autoseed = os.environ.get("MEGASENA_AUTOSEED", "1") == "1"
     if autoseed and not USE_TURSO:
-        for loteria in ("mega", "loto"):
+        for loteria in SEED_FILES:
             if count_draws(loteria) == 0:
                 seed = load_bundled_seed(loteria)
                 if seed:

@@ -1,4 +1,4 @@
-# Mega-Sena Stats — Documentação completa (funcional + técnica)
+# Loterias Stats — Documentação completa (funcional + técnica)
 
 > Este documento explica **o que o app faz, como usar e como foi implementado**,
 > com detalhe suficiente para que outra IA (ou desenvolvedor) entenda o projeto
@@ -12,14 +12,32 @@
 
 ## 0. Princípio de honestidade (regra de projeto)
 
-Cada sorteio da Mega-Sena é **independente e uniformemente aleatório**. Nenhuma
-estatística, estratégia ou filtro altera a probabilidade real de acerto de uma
-combinação (sena = 1 em 50.063.860 para 6 dezenas, sempre). O app trata
-estatística como **exploração de dados e organização de jogos**, nunca como
-previsão — e diz isso na interface (rodapé fixo em todas as telas, avisos nas
-respostas da API, e ferramentas que *demonstram* a aleatoriedade, como o
-backtest e o raio-X). Qualquer análise deste projeto deve preservar esse
-princípio.
+Cada sorteio é **independente e uniformemente aleatório**. Nenhuma estatística,
+estratégia ou filtro altera a probabilidade real de acerto de uma combinação
+(sena = 1 em 50.063.860 para 6 dezenas; 15 acertos = 1 em 3.268.760 para 15
+dezenas — sempre). O app trata estatística como **exploração de dados e
+organização de jogos**, nunca como previsão — e diz isso na interface (rodapé
+fixo em todas as telas, avisos nas respostas da API, e ferramentas que
+*demonstram* a aleatoriedade, como o backtest e o raio-X). Qualquer análise
+deste projeto deve preservar esse princípio.
+
+A única exceção real, e o app é explícito sobre ela: **aumentar o número de
+dezenas da aposta muda a probabilidade de verdade**, porque uma aposta de k
+dezenas equivale a C(k, escolher) apostas simples — e custa exatamente isso.
+É o que a aba Fábrica → Fechamento calcula, com a garantia verificada por
+força bruta antes de exibir.
+
+### Loterias suportadas
+
+| | Aposta | Sorteia | Faixas | Prêmio principal | Ganhar algo | Preço |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Mega-Sena** (`mega`) | 6 a 20 de 60 | 6 | 6/5/4 | 1 em 50.063.860 | 1 em 2.298 | R$ 6,00 |
+| **Lotofácil** (`lofa`) | 15 a 20 de 25 | 15 | 15/14/13/12/11 | 1 em 3.268.760 | 1 em 9 | R$ 3,50 |
+
+Todo o backend é parametrizado por `backend/app/lotteries.py`; nada assume
+"6 de 60". A Lotomania foi removida do app (era `loto`): ficava em último lugar
+nas duas dimensões que importam — 1 em 11.372.635 no prêmio principal e apenas
+1 em 88 para ganhar algo, com prêmio-base de R$ 500 mil.
 
 ---
 

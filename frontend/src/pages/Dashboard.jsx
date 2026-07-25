@@ -73,6 +73,23 @@ export default function Dashboard() {
                   </span>
                   {status.proximo.acumulado ? ' (acumulado)' : ''}
                 </p>
+                {/* A data vem do payload do concurso anterior; se a Caixa
+                    remarca o sorteio depois, o campo envelhece sem aviso. */}
+                {!status.proximo.data && status.proximo.estimativa != null && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
+                    {status.proximo.data_vencida
+                      ? 'A data que a Caixa informou já passou — o sorteio deve ter sido remarcado. '
+                      : 'A Caixa ainda não publicou a data deste concurso. '}
+                    <a
+                      href="https://loterias.caixa.gov.br/Paginas/default.aspx"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline font-medium"
+                    >
+                      Conferir no site da Caixa
+                    </a>
+                  </p>
+                )}
               </div>
             ) : (
               <p className="text-sm text-zinc-500 mt-2">

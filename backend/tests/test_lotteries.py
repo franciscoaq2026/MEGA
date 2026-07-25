@@ -593,23 +593,67 @@ def test_proximo_nao_fica_defasado():
 
 
 def test_reenviar_ultimo_atualiza_proximo():
+    # Datas relativas a hoje: uma data fixa no futuro vira passado com o tempo
+    # e o status passa a esconder a data (ver test_data_do_proximo_vencida).
+    from datetime import date, timedelta
+
+    apuracao = date.today() - timedelta(days=1)
+    proxima = date.today() + timedelta(days=2)
     with make_client() as c:
         cc = 999100
-        db.upsert_draws([{"concurso": cc, "data": "2026-06-01", "dezenas": LOFA_15}], "lofa")
+        db.upsert_draws(
+            [{"concurso": cc, "data": apuracao.isoformat(), "dezenas": LOFA_15}], "lofa"
+        )
         db.set_meta("proximo:lofa", {"concurso": cc - 200, "data": "2026-01-01", "estimativa": 1, "acumulado": True})
         # reenvia o payload do último (já no cache): deve atualizar o "próximo"
         payload = {
             "numero": cc,
             "listaDezenas": [f"{n:02d}" for n in LOFA_15],
-            "dataApuracao": "01/06/2026",
+            "dataApuracao": apuracao.strftime("%d/%m/%Y"),
             "numeroConcursoProximo": cc + 1,
-            "dataProximoConcurso": "03/06/2026",
+            "dataProximoConcurso": proxima.strftime("%d/%m/%Y"),
             "valorEstimadoProximoConcurso": 5000000,
         }
         c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]})
         st = c.get("/api/status?loteria=lofa").json()
         assert st["proximo"]["concurso"] == cc + 1
-        assert st["proximo"]["data"] == "2026-06-03"
+        assert st["proximo"]["data"] == proxima.isoformat()
+
+
+def test_data_do_proximo_vencida_nao_e_exibida():
+    """A Caixa remarca sorteios (eventos especiais), mas o campo
+    dataProximoConcurso do concurso anterior não é reescrito. Uma data no
+    passado é informação errada — some, mas o concurso e o prêmio ficam."""
+    from datetime import date, timedelta
+
+    with make_client() as c:
+        cc = 999900  # acima de todos: nao interfere no "ultimo" dos outros testes
+        db.upsert_draws([{"concurso": cc, "data": "2026-05-01", "dezenas": LOFA_15}], "lofa")
+        ontem = (date.today() - timedelta(days=5)).isoformat()
+        db.set_meta("proximo:lofa", {
+            "concurso": cc + 1, "data": ontem, "estimativa": 5_000_000, "acumulado": True,
+        })
+        prox = c.get("/api/status?loteria=lofa").json()["proximo"]
+        assert prox["concurso"] == cc + 1        # o número segue válido
+        assert prox["estimativa"] == 5_000_000   # o prêmio também
+        assert prox["data"] is None              # só a data cai
+        assert prox["data_vencida"] is True
+
+        # data futura passa intacta
+        amanha = (date.today() + timedelta(days=2)).isoformat()
+        db.set_meta("proximo:lofa", {
+            "concurso": cc + 1, "data": amanha, "estimativa": 5_000_000, "acumulado": True,
+        })
+        prox = c.get("/api/status?loteria=lofa").json()["proximo"]
+        assert prox["data"] == amanha
+        assert "data_vencida" not in prox
+
+        # data de hoje não é considerada vencida (o sorteio ainda vai acontecer)
+        hoje = date.today().isoformat()
+        db.set_meta("proximo:lofa", {
+            "concurso": cc + 1, "data": hoje, "estimativa": 5_000_000, "acumulado": True,
+        })
+        assert c.get("/api/status?loteria=lofa").json()["proximo"]["data"] == hoje
 
 
 def test_validacao_dezenas_por_loteria():

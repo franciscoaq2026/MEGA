@@ -1,3 +1,5 @@
+from datetime import date, datetime, timedelta, timezone
+
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
@@ -17,15 +19,38 @@ def _prox_key(loteria: str) -> str:
     return "proximo" if loteria == "mega" else f"proximo:{loteria}"
 
 
+def _data_vencida(iso: str | None) -> bool:
+    """A data do próximo sorteio já passou?
+
+    `dataProximoConcurso` é uma fotografia tirada quando o concurso anterior
+    foi apurado. Se a Caixa remarca o sorteio depois disso — o que acontece em
+    eventos especiais —, o campo continua com a data antiga e vira informação
+    errada. Um dia de folga evita esconder por engano uma data de hoje/ontem
+    por causa do fuso do servidor (UTC) contra o horário de Brasília."""
+    if not iso:
+        return False
+    try:
+        data = date.fromisoformat(iso)
+    except ValueError:
+        return True
+    return data < datetime.now(timezone.utc).date() - timedelta(days=1)
+
+
 def _proximo_saneado(lot: str, ultimo: dict | None) -> dict | None:
     """Evita mostrar um "próximo concurso" defasado. Se o valor guardado
     estiver ausente ou for <= ao último sorteio já no cache (meta antiga que
     não acompanhou os concursos adicionados depois), deriva o próximo do
-    último local (nº +1), sem data/prêmio (que seriam do concurso errado)."""
+    último local (nº +1), sem data/prêmio (que seriam do concurso errado).
+
+    O número do concurso e o prêmio estimado continuam válidos mesmo quando a
+    data envelhece, então só a data é descartada — informação errada é pior
+    que informação ausente."""
     prox = db.get_meta(_prox_key(lot))
     if not ultimo:
         return prox
     if prox and prox.get("concurso") and prox["concurso"] > ultimo["concurso"]:
+        if _data_vencida(prox.get("data")):
+            return {**prox, "data": None, "data_vencida": True}
         return prox
     return {
         "concurso": ultimo["concurso"] + 1,

@@ -306,6 +306,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `POST /api/score` | termômetro: `{dezenas[6–20]}` → nota + critérios |
 | `POST /api/wheel` | fechamento: `{dezenas[7–20], tipo: completa\|reduzida, garantia: 4\|5}` |
 | `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
+| `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
 | `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
 | `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias |
 
@@ -399,6 +400,34 @@ arredondamento. O retorno médio e a soma dos acertos não se movem em nenhum
 caso: espalhar redistribui, não aumenta. `gerar(espalhar=True)` usa o piso como
 alvo de parada (mirar em "zero repetidas" nunca terminava na Lotofácil) e
 `/generate` devolve a sobreposição obtida contra o piso.
+
+### 6.5.3 Chance de levar algo com N bilhetes (`odds_carteira`)
+`1-(1-p)^N` é a conta de bilhetes independentes. Ela vale **exatamente** para o
+prêmio principal (dois bilhetes distintos nunca o ganham juntos), mas para
+"levar algum prêmio" é apenas uma referência — não é piso nem teto. O valor real
+depende de como os bilhetes se sobrepõem:
+
+- **Teto**: `min(1, N·p)`, pela união. Atingido quando nenhum par pode premiar
+  no mesmo sorteio, isto é, sobreposição ≤ `limiar_sobreposicao` (§6.5.2).
+- **Mega**: o gerador com `espalhar` mantém sobreposição máxima ≤ 1 para todo N
+  até 20 (6 dezenas em 60 dão espaço de sobra), então `P = N·p` exatamente.
+  Flag `espalhar_na_zona_gratuita` na config.
+- **Lotofácil**: a zona gratuita só é alcançável com 2 bilhetes. Com 3+, o piso
+  de sobreposição já a ultrapassa, e não há fórmula fechada — os valores vêm
+  medidos por enumeração exata dos 3.268.760 sorteios (`carteira_espalhada`,
+  média de 12 conjuntos gerados por N):
+
+| Bilhetes | Soltos `1-(1-p)^N` | Espalhados (enumerado) |
+|---|---|---|
+| 2 | 20,06% | 21,18% (= 2p, o teto) |
+| 5 | 42,86% | 47,13% |
+| 12 | 73,90% | 80,89% |
+| 20 | 89,34% | 94,11% |
+
+Antes desta correção `/odds/carteira` ignorava a opção `espalhar`, e a tela
+"Probabilidades reais" mostrava o número de bilhetes soltos mesmo com espalhar
+ligado — o painel não reagia ao checkbox. O retorno médio segue idêntico nos
+dois modos: espalhar redistribui, não aumenta.
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

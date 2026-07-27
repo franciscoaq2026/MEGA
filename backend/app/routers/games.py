@@ -113,7 +113,9 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
         "dezenas": dezenas,
         "jogos": jogos,
         "sobreposicao": generator.resumo_sobreposicao(jogos, dezenas, lot),
-        "carteira": generator.odds_carteira(req.jogos, lot) if dezenas == cfg["escolher"] else None,
+        "carteira": generator.odds_carteira(req.jogos, lot, espalhar)
+        if dezenas == cfg["escolher"]
+        else None,
         "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
     }
 
@@ -121,10 +123,14 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
 @router.get("/odds/carteira")
 def odds_carteira(
     jogos: int = Query(1, ge=1, le=100000),
+    espalhar: bool = Query(False),
     loteria: str | None = Query(default=None),
 ):
-    """Chance acumulada de N apostas simples separadas (1 - (1-p)^N)."""
-    return generator.odds_carteira(jogos, _lot(loteria))
+    """Chance acumulada de N apostas simples separadas.
+
+    `espalhar` muda a chance de levar ALGUM prêmio (não a do prêmio principal,
+    nem o retorno médio): bilhetes espalhados cobrem sorteios diferentes."""
+    return generator.odds_carteira(jogos, _lot(loteria), espalhar)
 
 
 @router.get("/odds")

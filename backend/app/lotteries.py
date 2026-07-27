@@ -44,6 +44,10 @@ LOTERIAS: dict[str, dict] = {
         },
         "max_roda_completa": 11,   # C(11,6) = 462 jogos
         "max_reduzida": 15,        # C(15,6) = 5.005 combinações a cobrir
+        # Espalhar aqui alcança a "zona gratuita" (sobreposição <= 1, o limiar
+        # da Mega) para qualquer N até 20 — 6 dezenas em 60 sobra volante de
+        # sobra. Logo P(levar algo) = N·p EXATAMENTE, sem precisar de tabela.
+        "espalhar_na_zona_gratuita": True,
         # A partir de quantos consecutivos o jogo vira "desenho no volante"
         # (padrão popular → risco de rateio). Marcar 6 de 60 raramente encosta
         # em 4 seguidos, então 4 já é suspeito.
@@ -75,6 +79,21 @@ LOTERIAS: dict[str, dict] = {
         },
         "max_roda_completa": 17,   # C(17,15) = 136 jogos
         "max_reduzida": 18,        # C(18,15) = 816 combinações a cobrir
+        # Chance de levar ALGUM prêmio com N bilhetes espalhados pelo gerador.
+        # Aqui a "zona gratuita" (sobreposição <= 6) só é alcançável com 2
+        # bilhetes: 15+15 dezenas em 25 forçam 5 coincidências, e a partir de 3
+        # bilhetes a média das sobreposições passa de 6 obrigatoriamente. Logo
+        # não há fórmula fechada, e estes valores foram MEDIDOS por enumeração
+        # exata dos 3.268.760 sorteios possíveis (média de 12 conjuntos gerados
+        # por jogo; ver docs §6.5.3). Comparar com bilhetes soltos
+        # 1-(1-p)^N: 2 -> 20,06% · 5 -> 42,86% · 12 -> 73,90% · 20 -> 89,34%.
+        "carteira_espalhada": {
+            2: 0.211778, 3: 0.309329, 4: 0.395192, 5: 0.471277, 6: 0.540865,
+            7: 0.603113, 8: 0.658365, 9: 0.704695, 10: 0.744911, 11: 0.779138,
+            12: 0.808861, 13: 0.834638, 14: 0.855121, 15: 0.873992,
+            16: 0.892927, 17: 0.908321, 18: 0.920927, 19: 0.931807,
+            20: 0.941096,
+        },
         # Marcar 15 de 25 SEMPRE gera sequências — não cabem 15 dezenas em 25
         # sem encostar. Medido nos 3.657 concursos do seed: 4+ seguidos saem em
         # 87% dos sorteios (usar o 4 da Mega marcaria quase todo jogo), 9+ em

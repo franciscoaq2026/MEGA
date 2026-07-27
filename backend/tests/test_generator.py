@@ -157,7 +157,7 @@ def test_piso_sobreposicao():
 def test_resumo_sobreposicao():
     jogos = [{"dezenas": [1, 2, 3, 4, 5, 6]}, {"dezenas": [1, 2, 3, 40, 50, 60]}]
     r = generator.resumo_sobreposicao(jogos, 6, "mega")
-    assert r == {"maxima": 3, "media": 3.0, "piso": 0, "no_piso": False}
+    assert (r["maxima"], r["media"], r["piso"], r["no_piso"]) == (3, 3.0, 0, False)
     # bilhetes idênticos: o pior caso possível
     iguais = [{"dezenas": [1, 2, 3, 4, 5, 6]}] * 2
     assert generator.resumo_sobreposicao(iguais, 6, "mega")["maxima"] == 6
@@ -180,3 +180,80 @@ def test_espalhar_reduz_sobreposicao_na_lotofacil():
     r_esp = generator.resumo_sobreposicao(esp, 15, "lofa")
     assert r_esp["media"] < r_solto["media"]
     assert r_esp["maxima"] >= 5  # o piso não pode ser furado
+
+
+def test_limiar_sobreposicao():
+    """Zona gratuita: enquanto dois bilhetes não PODEM premiar juntos,
+    P(levar algo) = N·p exatamente, o teto. Ver limiar_sobreposicao."""
+    mega = lotteries.LOTERIAS["mega"]
+    lofa = lotteries.LOTERIAS["lofa"]
+    assert generator.limiar_sobreposicao(mega) == 1   # 2·4 − 6 − 1
+    assert generator.limiar_sobreposicao(lofa) == 6   # 2·11 − 15 − 1
+
+    # a conta que sustenta o limiar: no limiar, prêmio duplo é impossível;
+    # uma dezena acima, passa a ser possível
+    for cfg in (mega, lofa):
+        f, S = min(cfg["faixas"]), cfg["sorteadas"]
+        limiar = generator.limiar_sobreposicao(cfg)
+        assert limiar + S < 2 * f       # soma máxima de acertos não alcança 2 faixas
+        assert (limiar + 1) + S >= 2 * f
+
+    # na Lotofácil o piso (5) cabe na zona gratuita (6): com 2 bilhetes o ótimo
+    # é alcançável. Na Mega, piso 0 <= limiar 1, idem.
+    assert generator.piso_sobreposicao(15, lofa) <= generator.limiar_sobreposicao(lofa)
+    assert generator.piso_sobreposicao(6, mega) <= generator.limiar_sobreposicao(mega)
+    # com 20 dezenas por bilhete na Lotofácil o piso sobe a 15: zona inalcançável
+    assert generator.piso_sobreposicao(20, lofa) > generator.limiar_sobreposicao(lofa)
+
+
+def test_resumo_sobreposicao_zona_gratuita():
+    # Mega: dois bilhetes dividindo 1 dezena estão na zona gratuita (limiar 1)
+    um = [{"dezenas": [1, 2, 3, 4, 5, 6]}, {"dezenas": [6, 10, 20, 30, 40, 50]}]
+    r = generator.resumo_sobreposicao(um, 6, "mega")
+    assert r["maxima"] == 1
+    assert r["limiar"] == 1
+    assert r["sem_custo"] is True
+    assert r["no_piso"] is False  # não está no piso (0), mas custa a mesma coisa
+    assert r["otimo_possivel"] is True
+    # duas dezenas em comum já permitem prêmio duplo -> sai da zona
+    duas = [{"dezenas": [1, 2, 3, 4, 5, 6]}, {"dezenas": [5, 6, 20, 30, 40, 50]}]
+    assert generator.resumo_sobreposicao(duas, 6, "mega")["sem_custo"] is False
+
+
+def test_odds_carteira_reage_ao_espalhar():
+    """A tela mostrava o valor de bilhetes SOLTOS mesmo com espalhar ligado.
+    Espalhar não muda o prêmio principal nem o retorno médio, mas muda a
+    chance de levar algo — e a função tem de refletir isso."""
+    solto = generator.odds_carteira(5, "mega")
+    esp = generator.odds_carteira(5, "mega", espalhar=True)
+    assert esp["qualquer"]["prob"] > solto["qualquer"]["prob"]
+    assert esp["qualquer_solto"] == solto["qualquer"]
+    # faixas individuais (inclusive o prêmio principal) não mudam
+    assert esp["faixas"] == solto["faixas"]
+    assert esp["custo_estimado"] == solto["custo_estimado"]
+
+    # Mega: espalhado é EXATAMENTE N·p (zona gratuita), não 1-(1-p)^N
+    p = generator.odds(6, loteria="mega")["qualquer"]["prob"]
+    assert esp["metodo"] == "exato"
+    assert abs(esp["qualquer"]["prob"] - 5 * p) < 1e-15
+    assert solto["qualquer"]["prob"] < 5 * p  # o independente fica abaixo do teto
+
+    # 1 bilhete não tem o que espalhar
+    um = generator.odds_carteira(1, "mega", espalhar=True)
+    assert um["espalhar"] is False
+    assert um["metodo"] == "independente"
+
+
+def test_odds_carteira_lotofacil_usa_tabela_enumerada():
+    """Na Lotofácil a zona gratuita não é alcançável com 3+ bilhetes, então o
+    valor espalhado vem da tabela medida por enumeração exata."""
+    cfg = lotteries.LOTERIAS["lofa"]
+    tabela = cfg.get("carteira_espalhada") or {}
+    assert tabela, "tabela de carteira espalhada ausente"
+    p = generator.odds(15, loteria="lofa")["qualquer"]["prob"]
+    for n, valor in tabela.items():
+        solto = 1 - (1 - p) ** n
+        assert solto <= valor <= min(1.0, n * p) + 1e-9, f"N={n} fora dos limites teóricos"
+    r = generator.odds_carteira(12, "lofa", espalhar=True)
+    assert r["metodo"] == "enumerado"
+    assert r["qualquer"]["prob"] > r["qualquer_solto"]["prob"]

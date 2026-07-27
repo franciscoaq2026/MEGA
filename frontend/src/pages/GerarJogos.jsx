@@ -102,11 +102,15 @@ export default function GerarJogos() {
 
   // Chance acumulada de N bilhetes simples separados — a conta que interessa
   // a quem joga simples, e a base da comparação com a aposta múltipla.
+  // Depende de `espalharAtivo`: espalhar muda a chance de levar ALGUM prêmio,
+  // então o painel tem de reagir ao checkbox (antes ficava parado no valor de
+  // bilhetes soltos, mesmo com a opção ligada).
+  const espalharAtivo = simples && espalhar && qtdJogos > 1
   useEffect(() => {
-    apiGet(`/odds/carteira?jogos=${qtdJogos}`)
+    apiGet(`/odds/carteira?jogos=${qtdJogos}&espalhar=${espalharAtivo}`)
       .then(setCarteira)
       .catch(() => setCarteira(null))
-  }, [qtdJogos])
+  }, [qtdJogos, espalharAtivo])
 
   function salvar(i, jogo) {
     if (!concursoSalvar) return
@@ -373,6 +377,7 @@ export default function GerarJogos() {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                   <p className="text-xs text-emerald-900">
                     Chance de levar <strong>algum</strong> prêmio
+                    {carteira.espalhar ? ' (espalhando)' : ''}
                   </p>
                   <p className="font-bold tabular-nums text-emerald-900">
                     {fmt(carteira.qualquer.pct)}%{' '}
@@ -380,10 +385,28 @@ export default function GerarJogos() {
                       (1 em {fmt(carteira.qualquer.one_in)})
                     </span>
                   </p>
-                  {espalhar && qtdJogos > 1 && (
-                    <p className="text-[11px] text-emerald-800 mt-0.5">
-                      espalhando, essa frequência sobe alguns pontos — o retorno médio não muda
+                  {carteira.espalhar ? (
+                    <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
+                      {carteira.metodo === 'exato' ? (
+                        <>
+                          este é o <strong>teto</strong>: espalhados, os seus bilhetes não podem
+                          premiar dois no mesmo sorteio, então a chance é a de um bilhete vezes{' '}
+                          {qtdJogos}, sem perda nenhuma
+                        </>
+                      ) : (
+                        <>
+                          sem espalhar seria <strong>{fmt(carteira.qualquer_solto.pct)}%</strong> —
+                          medido por enumeração de todos os sorteios possíveis
+                        </>
+                      )}
+                      . O retorno médio é o mesmo nos dois casos.
                     </p>
+                  ) : (
+                    qtdJogos > 1 && (
+                      <p className="text-[11px] text-emerald-800 mt-0.5">
+                        marcando “espalhar os jogos” essa frequência sobe — o retorno médio não muda
+                      </p>
+                    )
                   )}
                 </div>
               )}
@@ -457,25 +480,41 @@ export default function GerarJogos() {
           {result.sobreposicao && (
             <div
               className={`text-xs rounded-lg border px-3 py-2 mb-3 leading-relaxed ${
-                result.sobreposicao.no_piso
+                result.sobreposicao.sem_custo
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                   : 'bg-zinc-50 border-zinc-200 text-zinc-600'
               }`}
             >
               Seus bilhetes repetem no máximo{' '}
               <strong>{result.sobreposicao.maxima} dezenas</strong> entre si (média{' '}
-              {num(result.sobreposicao.media, 1)}) · o mínimo possível na {cfg.nome} é{' '}
-              <strong>{result.sobreposicao.piso}</strong>
-              {result.sobreposicao.piso > 0 && (
+              {num(result.sobreposicao.media, 1)}).{' '}
+              {result.sobreposicao.sem_custo ? (
                 <>
-                  , porque {cfg.escolher}+{cfg.escolher} dezenas não cabem em {cfg.total} sem
-                  encostar
+                  Até <strong>{result.sobreposicao.limiar}</strong> não custa nada: dois bilhetes só
+                  podem premiar no mesmo sorteio a partir de {result.sobreposicao.limiar + 1}{' '}
+                  dezenas em comum, então a sua chance de levar algo já está no{' '}
+                  <strong>máximo possível</strong> — a de um bilhete, multiplicada por{' '}
+                  {result.jogos.length}.
+                </>
+              ) : (
+                <>
+                  Acima de <strong>{result.sobreposicao.limiar}</strong> cada dezena repetida troca
+                  “levar algo mais vezes” por “levar em dois bilhetes de uma vez”. O retorno médio
+                  não muda em nenhum dos casos — e é só isto que a escolha de dezenas pode mexer num
+                  conjunto de bilhetes: a estratégia em si não altera nada.
                 </>
               )}
-              .{' '}
-              {result.sobreposicao.no_piso
-                ? 'Está no piso — não existe conjunto mais espalhado que este.'
-                : 'Com vários bilhetes, é só isto que a escolha de dezenas pode mexer: a estratégia não altera nada, a sobreposição altera a frequência com que você leva algo (nunca o retorno médio).'}
+              {result.sobreposicao.piso > 0 && (
+                <>
+                  {' '}
+                  O mínimo possível na {cfg.nome} é <strong>{result.sobreposicao.piso}</strong>,
+                  porque {cfg.escolher}+{cfg.escolher} dezenas não cabem em {cfg.total} sem encostar
+                  {!result.sobreposicao.otimo_possivel && (
+                    <> — com {result.jogos.length} bilhetes a zona gratuita é inalcançável</>
+                  )}
+                  .
+                </>
+              )}
             </div>
           )}
           <label className="flex items-center gap-2 text-sm mb-3">

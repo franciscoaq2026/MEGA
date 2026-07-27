@@ -152,6 +152,31 @@ def piso_sobreposicao(k: int, cfg: dict) -> int:
     return max(0, 2 * k - cfg["total"])
 
 
+def limiar_sobreposicao(cfg: dict) -> int:
+    """Sobreposição máxima que ainda não custa NADA em "levar algum prêmio".
+
+    Dois bilhetes só podem premiar no MESMO sorteio se somarem 2·faixa_mínima
+    acertos, e a soma dos acertos de dois bilhetes é no máximo
+    `sobreposição + sorteadas` (as dezenas fora da interseção competem pelas
+    mesmas bolas). Logo prêmio duplo só é possível a partir de
+    `2·faixa_mínima − sorteadas`, e abaixo disso:
+
+        P(levar algo em N bilhetes) = N · p, EXATAMENTE
+
+    porque a inclusão-exclusão não tem termo para subtrair — nenhum par pode
+    ganhar junto. É o teto: nenhuma disposição de N bilhetes supera N·p.
+
+        limiar = 2·faixa_mínima − sorteadas − 1
+
+    Mega: 1 (dividir 1 dezena é tão bom quanto dividir nenhuma). Lotofácil: 6
+    — e como o piso lá é 5, dois bilhetes de 15 dezenas conseguem ficar na zona
+    gratuita, o que explica por que sobreposição 5 e 6 dão a MESMA chance de
+    premiar (21,178% = 2 × 10,589%)."""
+    if not cfg["faixas"]:
+        return -1
+    return 2 * min(cfg["faixas"]) - cfg["sorteadas"] - 1
+
+
 def padrao_popular(
     dezenas: list[int],
     premiadas_passadas: set[tuple] | None = None,
@@ -296,7 +321,11 @@ def resumo_sobreposicao(jogos: list[dict], k: int, loteria: str = "mega") -> dic
         melhor bilhete    9,88                       9,68                   9,00
         retorno médio   R$ 1,80                    R$ 1,80                R$ 1,80
 
-    O retorno médio não se move — espalhar redistribui, não aumenta."""
+    O retorno médio não se move — espalhar redistribui, não aumenta.
+
+    `sem_custo` é o que realmente importa, e é mais generoso que o piso: até
+    `limiar_sobreposicao` a chance de levar algo já está no teto de N·p, então
+    apertar mais a sobreposição não compra nada."""
     if len(jogos) < 2:
         return None
     cfg = lotteries.get_loteria(loteria)
@@ -305,22 +334,61 @@ def resumo_sobreposicao(jogos: list[dict], k: int, loteria: str = "mega") -> dic
         len(a & b) for i, a in enumerate(conjuntos) for b in conjuntos[i + 1:]
     ]
     piso = piso_sobreposicao(k, cfg)
+    limiar = limiar_sobreposicao(cfg)
+    maxima = max(pares)
     return {
-        "maxima": max(pares),
+        "maxima": maxima,
         "media": round(sum(pares) / len(pares), 2),
         "piso": piso,
-        "no_piso": max(pares) <= piso,
+        "no_piso": maxima <= piso,
+        "limiar": limiar,
+        "sem_custo": maxima <= limiar,
+        # Nenhum par PODE ficar abaixo do piso, então quando o piso já está na
+        # zona gratuita o ótimo é sempre alcançável — vale dizer isso ao usuário.
+        "otimo_possivel": piso <= limiar,
     }
 
 
-def odds_carteira(n_jogos: int, loteria: str = "mega") -> dict:
+def _qualquer_espalhado(n_jogos: int, p_uma: float, cfg: dict) -> tuple[float, str]:
+    """Chance de levar algo com N bilhetes ESPALHADOS pelo gerador do app.
+
+    Duas situações, e as duas são exatas — não são estimativas:
+
+    1. Zona gratuita (`limiar_sobreposicao`): se nenhum par de bilhetes pode
+       premiar no mesmo sorteio, a inclusão-exclusão não tem termo a subtrair e
+       P = N·p, o teto absoluto. Na Mega o gerador fica nessa zona (sobreposição
+       máxima 1) para todo N até 20 — verificado em teste.
+    2. Fora dela, o valor depende de COMO os bilhetes se sobrepõem, então não há
+       fórmula fechada: usamos a tabela medida por enumeração de todos os
+       sorteios (`carteira_espalhada` em lotteries.py).
+
+    Sem tabela e fora da zona, cai no independente `1-(1-p)^N`, que é o piso."""
+    if cfg.get("espalhar_na_zona_gratuita") and n_jogos * p_uma <= 1:
+        return n_jogos * p_uma, "exato"
+    tabela = cfg.get("carteira_espalhada") or {}
+    if n_jogos in tabela:
+        return tabela[n_jogos], "enumerado"
+    return 1 - (1 - p_uma) ** n_jogos, "independente"
+
+
+def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -> dict:
     """Probabilidade acumulada de N apostas simples SEPARADAS.
 
     Para cada faixa, a chance de pelo menos uma das N apostas bater. Como a
     chance marginal é a mesma para qualquer sorteio, apostas distintas se
     comportam como ensaios independentes: P = 1 - (1-p)^N. Vale exatamente
-    para o prêmio principal; para "ganhar algo" é o piso, porque espalhar os
-    jogos melhora esse número (ver `gerar(espalhar=True)`)."""
+    para o prêmio principal, em que dois bilhetes distintos nunca ganham juntos.
+
+    Para "ganhar algo" a independência é só uma REFERÊNCIA, não um limite: o
+    valor real depende de como os bilhetes se sobrepõem, e pode ficar acima
+    (espalhados) ou abaixo (bilhetes parecidos, N grande) da fórmula. O teto
+    verdadeiro é o da união, min(1, N·p), atingido quando nenhum par pode
+    premiar no mesmo sorteio (ver `limiar_sobreposicao`).
+
+    Com `espalhar=True` devolvemos o número correspondente ao que o app
+    realmente gera — antes esta função ignorava a opção, e a tela mostrava o
+    valor de bilhetes soltos mesmo com "espalhar" ligado. O retorno médio é o
+    mesmo nos dois casos."""
     cfg = lotteries.get_loteria(loteria)
     base = odds(cfg["escolher"], cfg["preco"], loteria)
     faixas = {}
@@ -328,16 +396,28 @@ def odds_carteira(n_jogos: int, loteria: str = "mega") -> dict:
         p = 1 - (1 - f["prob"]) ** n_jogos
         faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
-    qualquer = 1 - (1 - p_uma) ** n_jogos
+    if espalhar and n_jogos > 1:
+        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg)
+    else:
+        qualquer, metodo = 1 - (1 - p_uma) ** n_jogos, "independente"
+    solto = 1 - (1 - p_uma) ** n_jogos
     return {
         "jogos": n_jogos,
         "dezenas": cfg["escolher"],
         "custo_estimado": round(n_jogos * cfg["preco"], 2),
+        "espalhar": bool(espalhar and n_jogos > 1),
+        "metodo": metodo,
         "faixas": faixas,
         "qualquer": {
             "prob": qualquer,
             "one_in": round(1 / qualquer, 2) if qualquer else None,
             "pct": round(100 * qualquer, 2),
+        },
+        # O mesmo dinheiro em bilhetes soltos, para a comparação ficar honesta.
+        "qualquer_solto": {
+            "prob": solto,
+            "one_in": round(1 / solto, 2) if solto else None,
+            "pct": round(100 * solto, 2),
         },
     }
 

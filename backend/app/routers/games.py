@@ -112,6 +112,7 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
         "espalhar": espalhar,
         "dezenas": dezenas,
         "jogos": jogos,
+        "sobreposicao": generator.resumo_sobreposicao(jogos, dezenas, lot),
         "carteira": generator.odds_carteira(req.jogos, lot) if dezenas == cfg["escolher"] else None,
         "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
     }

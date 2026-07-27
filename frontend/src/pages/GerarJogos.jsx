@@ -454,6 +454,30 @@ export default function GerarJogos() {
           title={`Jogos gerados — ${ESTRATEGIAS.find((e) => e.id === result.estrategia)?.nome}`}
           subtitle={result.aviso}
         >
+          {result.sobreposicao && (
+            <div
+              className={`text-xs rounded-lg border px-3 py-2 mb-3 leading-relaxed ${
+                result.sobreposicao.no_piso
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-zinc-50 border-zinc-200 text-zinc-600'
+              }`}
+            >
+              Seus bilhetes repetem no máximo{' '}
+              <strong>{result.sobreposicao.maxima} dezenas</strong> entre si (média{' '}
+              {num(result.sobreposicao.media, 1)}) · o mínimo possível na {cfg.nome} é{' '}
+              <strong>{result.sobreposicao.piso}</strong>
+              {result.sobreposicao.piso > 0 && (
+                <>
+                  , porque {cfg.escolher}+{cfg.escolher} dezenas não cabem em {cfg.total} sem
+                  encostar
+                </>
+              )}
+              .{' '}
+              {result.sobreposicao.no_piso
+                ? 'Está no piso — não existe conjunto mais espalhado que este.'
+                : 'Com vários bilhetes, é só isto que a escolha de dezenas pode mexer: a estratégia não altera nada, a sobreposição altera a frequência com que você leva algo (nunca o retorno médio).'}
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm mb-3">
             <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
             <input

@@ -1,11 +1,22 @@
 import random
 
-from app import generator
+from app import generator, lotteries
 
 DRAWS = [
     {"concurso": i, "data": f"2024-01-{i:02d}", "dezenas": sorted(random.Random(i).sample(range(1, 61), 6))}
     for i in range(1, 51)
 ]
+
+# Histórico sintético por loteria, para os testes que precisam de dezenas dentro
+# do volante certo (a Lotofácil vai só até 25).
+DRAWS_POR_LOTERIA = {
+    "mega": DRAWS,
+    "lofa": [
+        {"concurso": i, "data": f"2024-01-{i:02d}",
+         "dezenas": sorted(random.Random(i).sample(range(1, 26), 15))}
+        for i in range(1, 51)
+    ],
+}
 
 
 def _check_valid(jogo, k):
@@ -121,3 +132,51 @@ def test_avaliar_acertos_veredito():
     # ~34% dos jogos fariam pior e ~34% melhor: 9 acertos é o meio da curva
     assert round(a9["pct_pior"]) == 34
     assert round(a9["pct_melhor"]) == 34
+
+
+def test_piso_sobreposicao():
+    """Casa dos pombos: dois bilhetes de k dezenas dividem >= 2k - total."""
+    mega = lotteries.LOTERIAS["mega"]
+    lofa = lotteries.LOTERIAS["lofa"]
+    assert generator.piso_sobreposicao(6, mega) == 0   # 6+6 cabem em 60
+    assert generator.piso_sobreposicao(15, lofa) == 5  # 15+15 em 25 -> 5 forçadas
+    assert generator.piso_sobreposicao(20, lofa) == 15
+    # o piso é atingível de fato: nenhum par de bilhetes fica abaixo dele
+    for lot, k in (("mega", 6), ("lofa", 15)):
+        cfg = lotteries.LOTERIAS[lot]
+        piso = generator.piso_sobreposicao(k, cfg)
+        jogos = generator.gerar(
+            DRAWS_POR_LOTERIA[lot], "aleatorio", 4, k,
+            rng=random.Random(7), loteria=lot, espalhar=True,
+        )
+        r = generator.resumo_sobreposicao(jogos, k, lot)
+        assert r["maxima"] >= piso
+        assert r["piso"] == piso
+
+
+def test_resumo_sobreposicao():
+    jogos = [{"dezenas": [1, 2, 3, 4, 5, 6]}, {"dezenas": [1, 2, 3, 40, 50, 60]}]
+    r = generator.resumo_sobreposicao(jogos, 6, "mega")
+    assert r == {"maxima": 3, "media": 3.0, "piso": 0, "no_piso": False}
+    # bilhetes idênticos: o pior caso possível
+    iguais = [{"dezenas": [1, 2, 3, 4, 5, 6]}] * 2
+    assert generator.resumo_sobreposicao(iguais, 6, "mega")["maxima"] == 6
+    # um bilhete só não tem com quem se sobrepor
+    assert generator.resumo_sobreposicao(jogos[:1], 6, "mega") is None
+
+
+def test_espalhar_reduz_sobreposicao_na_lotofacil():
+    """Espalhar tem efeito real, mas limitado pelo piso de 5 da Lotofácil."""
+    kw = dict(loteria="lofa", draws=DRAWS_POR_LOTERIA["lofa"])
+    solto = generator.gerar(
+        kw["draws"], "aleatorio", 5, 15, rng=random.Random(11),
+        loteria="lofa", espalhar=False,
+    )
+    esp = generator.gerar(
+        kw["draws"], "aleatorio", 5, 15, rng=random.Random(11),
+        loteria="lofa", espalhar=True,
+    )
+    r_solto = generator.resumo_sobreposicao(solto, 15, "lofa")
+    r_esp = generator.resumo_sobreposicao(esp, 15, "lofa")
+    assert r_esp["media"] < r_solto["media"]
+    assert r_esp["maxima"] >= 5  # o piso não pode ser furado

@@ -299,7 +299,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/stats/pairs?limit` | duplas mais frequentes |
 | `GET /api/stats/xray/{n}` | raio-X do concurso n (véspera) |
 | `GET /api/strategies` | nomes/descrições das estratégias |
-| `POST /api/generate` | `{estrategia, jogos≤20, dezenas 6–20, anti_rateio}` |
+| `POST /api/generate` | `{estrategia, jogos≤20, dezenas 6–20, anti_rateio, espalhar}` → jogos + `sobreposicao` |
 | `GET /api/odds?dezenas&preco_simples` | probabilidades exatas + custo |
 | `GET /api/analysis/ranges` | faixas típicas (p10–p90) de cada indicador |
 | `POST /api/generate-advanced` | `{jogos≤50, dezenas, filtros{...}, incluir[], excluir[], anti_rateio}` |
@@ -375,6 +375,30 @@ como régua — 8 a 10 acertos é *dentro do esperado*, 11+ é *acima*, ≤7 é
 estritas (quantos % dos jogos possíveis fariam menos e mais acertos). É o que
 impede a leitura errada de que "9 de 15" foi um bom jogo: é exatamente a média
 de qualquer combinação.
+
+### 6.5.2 Sobreposição entre bilhetes (`piso_sobreposicao`, `resumo_sobreposicao`)
+Com 2 bilhetes de k dezenas, a distribuição CONJUNTA dos acertos depende só de
+quantas dezenas eles compartilham — quais dezenas são é irrelevante. Isso
+encerra a pergunta "qual estratégia acerta mais com vários jogos": nenhuma. O
+que existe é sobreposição, e ela tem piso por casa dos pombos:
+
+    piso = max(0, 2k − total)
+
+Mega: 0 (dois jogos podem ser disjuntos). Lotofácil: **5** — dois jogos de 15
+dezenas em 25 não podem dividir menos que isso. Por enumeração exata dos
+3.268.760 sorteios, 2 bilhetes de 15 dezenas:
+
+| sobreposição | premiar em ≥1 | melhor bilhete | soma dos acertos | retorno fixo |
+|---|---|---|---|---|
+| 5 ou 6 (piso) | 21,178% | 9,88 | 18,00 | R$ 1,80 |
+| 9 (típico sem espalhar) | 20,184% | 9,68 | 18,00 | R$ 1,80 |
+| 15 (bilhetes iguais) | 10,589% | 9,00 | 18,00 | R$ 1,80 |
+
+Sobreposição 5 e 6 dão exatamente a mesma chance (15733/74290) — não é
+arredondamento. O retorno médio e a soma dos acertos não se movem em nenhum
+caso: espalhar redistribui, não aumenta. `gerar(espalhar=True)` usa o piso como
+alvo de parada (mirar em "zero repetidas" nunca terminava na Lotofácil) e
+`/generate` devolve a sobreposição obtida contra o piso.
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

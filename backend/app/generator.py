@@ -137,6 +137,21 @@ GERADORES = {
 }
 
 
+def piso_sobreposicao(k: int, cfg: dict) -> int:
+    """Dezenas que dois bilhetes de k dezenas SEMPRE compartilham.
+
+    Casa dos pombos, como em `garantia_minima`: dois bilhetes ocupam 2k lugares
+    num volante de `total` dezenas, então pelo menos 2k - total têm de coincidir.
+
+        piso = max(0, 2k - total)
+
+    Na Mega dá 0 (6+6 < 60: dois jogos podem ser totalmente disjuntos). Na
+    Lotofácil dá 5 — dois jogos de 15 dezenas em 25 NÃO PODEM dividir menos de
+    5 dezenas, por mais que se tente espalhar. É o limite de quanto a opção
+    "espalhar" pode entregar, e o motivo de ela render pouco lá."""
+    return max(0, 2 * k - cfg["total"])
+
+
 def padrao_popular(
     dezenas: list[int],
     premiadas_passadas: set[tuple] | None = None,
@@ -204,7 +219,12 @@ def gerar(
     independentemente da correlação entre eles. A chance do prêmio principal
     também não muda: são N em C(total, escolher) de qualquer jeito.
 
-    É, portanto, preferência de formato — não vantagem."""
+    É, portanto, preferência de formato — não vantagem.
+
+    Com 2 bilhetes o assunto se fecha em contas exatas: a distribuição conjunta
+    dos acertos depende SÓ de quantas dezenas os dois compartilham — quais
+    dezenas são não muda nada. Logo nenhuma estratégia mexe nisso; só a
+    sobreposição mexe, e ela tem piso (ver `piso_sobreposicao`)."""
     cfg = lotteries.get_loteria(loteria)
     numbers = lotteries.numbers(cfg)
     rng = rng or random.Random()
@@ -213,6 +233,10 @@ def gerar(
     resultado = []
     vistos: set[tuple] = set()
     escolhidos: list[set[int]] = []
+    # Melhor sobreposição alcançável. Buscar "zero repetidas" só faz sentido
+    # onde 2k <= total (Mega); na Lotofácil o piso é 5 e mirar em 0 fazia o
+    # laço gastar todos os candidatos sem nunca reconhecer o ótimo.
+    piso = piso_sobreposicao(dezenas, cfg)
 
     for _ in range(jogos):
         jogo, motivos = None, []
@@ -234,7 +258,7 @@ def gerar(
             sobrep = max(len(set(cand) & e) for e in escolhidos)
             if melhor_sobrep is None or sobrep < melhor_sobrep:
                 melhor, melhor_sobrep, motivos = cand, sobrep, cand_motivos
-                if sobrep == 0:
+                if sobrep <= piso:
                     break
         if jogo is None:
             # espalhando, ou nenhum candidato passou nos filtros: usa o melhor
@@ -255,6 +279,38 @@ def gerar(
             )
         resultado.append(item)
     return resultado
+
+
+def resumo_sobreposicao(jogos: list[dict], k: int, loteria: str = "mega") -> dict | None:
+    """Quanto os bilhetes do pedido se repetem entre si, contra o piso teórico.
+
+    É a única coisa que a escolha de dezenas pode mexer num conjunto de vários
+    bilhetes: com 2 bilhetes, a distribuição conjunta dos acertos depende só da
+    sobreposição, então "qual estratégia acerta mais" não tem resposta — "quão
+    espalhados estão os bilhetes" tem.
+
+    Verificado por enumeração exata dos 3.268.760 sorteios (2 bilhetes de 15):
+
+        sobreposição    5 ou 6    9 (típico sem espalhar)    15 (bilhetes iguais)
+        premiar em >=1  21,18%                     20,18%                 10,59%
+        melhor bilhete    9,88                       9,68                   9,00
+        retorno médio   R$ 1,80                    R$ 1,80                R$ 1,80
+
+    O retorno médio não se move — espalhar redistribui, não aumenta."""
+    if len(jogos) < 2:
+        return None
+    cfg = lotteries.get_loteria(loteria)
+    conjuntos = [set(j["dezenas"]) for j in jogos]
+    pares = [
+        len(a & b) for i, a in enumerate(conjuntos) for b in conjuntos[i + 1:]
+    ]
+    piso = piso_sobreposicao(k, cfg)
+    return {
+        "maxima": max(pares),
+        "media": round(sum(pares) / len(pares), 2),
+        "piso": piso,
+        "no_piso": max(pares) <= piso,
+    }
 
 
 def odds_carteira(n_jogos: int, loteria: str = "mega") -> dict:

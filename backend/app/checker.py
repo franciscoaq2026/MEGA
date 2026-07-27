@@ -10,10 +10,18 @@ def conferir(dezenas: list[int], resultado: list[int], loteria: str = "mega") ->
 
     Cada loteria tem sua própria tabela de faixas (a Mega premia 6/5/4; a
     Lotofácil, 15/14/13/12/11), por isso consultamos a config em vez de
-    aplicar um mínimo fixo."""
+    aplicar um mínimo fixo.
+
+    Junto vem `avaliacao`: onde esse número de acertos cai na distribuição do
+    acaso. Sem essa régua não há como julgar o próprio resultado — 9 acertos
+    na Lotofácil soa alto e é exatamente a média de qualquer jogo."""
     faixas = lotteries.get_loteria(loteria)["faixas"]
     acertos = len(set(dezenas) & set(resultado))
-    return {"acertos": acertos, "faixa": faixas.get(acertos)}
+    return {
+        "acertos": acertos,
+        "faixa": faixas.get(acertos),
+        "avaliacao": generator.avaliar_acertos(acertos, len(dezenas), loteria),
+    }
 
 
 def conferir_apostas(apostas: list[dict], loteria: str = "mega") -> list[dict]:

@@ -121,3 +121,21 @@ def test_import_payloads_formato_caixa():
         # só payloads inválidos -> 400
         r = c.post("/api/import-payloads", json={"payloads": [invalido]})
         assert r.status_code == 400
+
+
+def test_acertos_esperados_endpoint():
+    """Régua de acertos por loteria — não depende do cache de sorteios, é só
+    matemática do formato da aposta."""
+    with make_client() as c:
+        r = c.get("/api/acertos-esperados?loteria=lofa")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["dezenas"] == 15  # aposta simples da Lotofácil
+        assert body["esperado"] == 9.0
+        assert body["menor_faixa_premiada"] == 11
+        assert body["premiado"]["one_in"] == 9
+
+        assert c.get("/api/acertos-esperados?loteria=lofa&dezenas=18").json()["esperado"] == 10.8
+        assert c.get("/api/acertos-esperados").json()["esperado"] == 0.6  # Mega
+        # fora do que a Caixa aceita
+        assert c.get("/api/acertos-esperados?loteria=lofa&dezenas=21").status_code == 400

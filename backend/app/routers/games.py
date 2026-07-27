@@ -143,6 +143,19 @@ def odds(
     return generator.odds(k, preco_simples, lot)
 
 
+@router.get("/acertos-esperados")
+def acertos_esperados(
+    dezenas: int = Query(0, ge=0, le=50),
+    loteria: str | None = Query(default=None),
+):
+    """Quantos acertos esperar de uma aposta de N dezenas — a régua para julgar
+    um resultado já saído (e o único jeito honesto de responder "foi bom?")."""
+    lot = _lot(loteria)
+    cfg = lotteries.get_loteria(lot)
+    k = cfg["escolher"] if not dezenas else _valida_tamanho(dezenas, cfg)
+    return generator.distribuicao_acertos(k, lot)
+
+
 @router.get("/odds/table")
 def odds_table(loteria: str | None = Query(default=None)):
     """Tabela completa de probabilidades: todos os tamanhos de aposta que a

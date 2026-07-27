@@ -305,7 +305,8 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `POST /api/generate-advanced` | `{jogos≤50, dezenas, filtros{...}, incluir[], excluir[], anti_rateio}` |
 | `POST /api/score` | termômetro: `{dezenas[6–20]}` → nota + critérios |
 | `POST /api/wheel` | fechamento: `{dezenas[7–20], tipo: completa\|reduzida, garantia: 4\|5}` |
-| `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` |
+| `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
+| `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
 | `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias |
 
 ---
@@ -351,9 +352,29 @@ teste: sena 6 dezenas = 1/50.063.860; quadra = 1/2.332; 20 dezenas → sena
 Para cada um dos últimos N concursos (default 100): gera 1 jogo de cada
 estratégia usando **somente** os sorteios anteriores àquele concurso (sem
 vazamento de futuro), com RNG semeado pelo número do concurso
-(reprodutível), e conta acertos. Esperado pelo acaso: 6·6/60 = **0,6
-acertos/jogo** — o resultado empírico de todas as estratégias flutua em torno
-disso, demonstrando a ausência de poder preditivo.
+(reprodutível), e conta acertos. Esperado pelo acaso:
+`escolher · sorteadas / total` — **0,6 acertos/jogo** na Mega (6·6/60) e
+**9,0** na Lotofácil (15·15/25). O resultado empírico de todas as estratégias
+flutua em torno disso, demonstrando a ausência de poder preditivo. Medido nos
+últimos 1.000 concursos da Lotofácil: aleatório 9,07 · frequência 9,03 ·
+atrasados 9,01 · balanceado 9,04, com 10,4% a 11,3% dos jogos chegando aos 11
+acertos da faixa mínima (o teórico é 10,6%).
+
+### 6.5.1 Régua de acertos (`distribuicao_acertos`, `avaliar_acertos`)
+A mesma hipergeométrica de §6.4 lida ao contrário: em vez de "qual a chance da
+faixa X", responde **"quantos acertos esperar"** — o que permite julgar um
+resultado já saído.
+
+    esperado = k · sorteadas / total
+    var      = k · p · (1−p) · (total−k)/(total−1),  p = sorteadas/total
+
+Na Lotofácil simples: 9,00 ± 1,22 acertos, moda 9, e só 10,59% dos jogos (1 em
+9) chegam aos 11 que pagam. O veredito de `avaliar_acertos` usa 1 desvio-padrão
+como régua — 8 a 10 acertos é *dentro do esperado*, 11+ é *acima*, ≤7 é
+*abaixo* — e vem embutido em cada linha de `POST /api/check`, com as caudas
+estritas (quantos % dos jogos possíveis fariam menos e mais acertos). É o que
+impede a leitura errada de que "9 de 15" foi um bom jogo: é exatamente a média
+de qualquer combinação.
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

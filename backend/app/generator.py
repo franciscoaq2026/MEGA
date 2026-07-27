@@ -491,6 +491,104 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
     }
 
 
+def distribuicao_acertos(k: int, loteria: str = "mega") -> dict:
+    """Distribuição do nº de acertos de UMA aposta de k dezenas.
+
+    É a mesma hipergeométrica de `odds()`, olhada por outro ângulo: em vez de
+    "qual a chance da faixa X", responde "quantos acertos esperar". Serve para
+    julgar um resultado já saído — sem essa régua, 9 acertos na Lotofácil
+    parece ótimo, quando é exatamente a média.
+
+        esperado = k · sorteadas / total
+        var      = k · p · (1-p) · (total-k)/(total-1),  p = sorteadas/total
+
+    Lotofácil, aposta simples: esperado 9,00 e desvio 1,22 — ou seja, quase
+    todo jogo cai entre 7 e 11 acertos, e só a ponta ≥ 11 paga algo.
+    Mega, aposta simples: esperado 0,60 — acertar 1 dezena já é acima da média.
+
+    `p_menos`/`p_mais` são as caudas ESTRITAS (P(X < h) e P(X > h)), o que
+    permite dizer honestamente quantos jogos fariam pior e melhor."""
+    cfg = lotteries.get_loteria(loteria)
+    total, sorteadas = cfg["total"], cfg["sorteadas"]
+    faixas = cfg["faixas"]
+    denom = comb(total, k)
+    probs = {
+        h: comb(sorteadas, h) * comb(total - sorteadas, k - h) / denom
+        for h in range(0, min(sorteadas, k) + 1)
+        if total - sorteadas >= k - h
+    }
+    p = sorteadas / total
+    esperado = k * p
+    var = k * p * (1 - p) * (total - k) / (total - 1) if total > 1 else 0.0
+    acumulado = 0.0
+    linhas = []
+    for h in sorted(probs):
+        linhas.append(
+            {
+                "acertos": h,
+                "prob": probs[h],
+                "pct": round(100 * probs[h], 4),
+                "p_menos": acumulado,
+                "p_mais": max(0.0, 1 - acumulado - probs[h]),
+                "faixa": faixas.get(h),
+            }
+        )
+        acumulado += probs[h]
+    menor_faixa = min(faixas) if faixas else None
+    premiado = sum(pr for h, pr in probs.items() if menor_faixa is not None and h >= menor_faixa)
+    return {
+        "loteria": cfg["code"],
+        "dezenas": k,
+        "esperado": round(esperado, 4),
+        "desvio": round(sqrt(var), 4),
+        "mais_provavel": max(probs, key=lambda h: probs[h]),
+        "menor_faixa_premiada": menor_faixa,
+        "premiado": {
+            "prob": premiado,
+            "pct": round(100 * premiado, 4),
+            "one_in": round(1 / premiado) if premiado else None,
+        },
+        "linhas": linhas,
+    }
+
+
+def avaliar_acertos(acertos: int, k: int, loteria: str = "mega") -> dict:
+    """Situa um resultado JÁ SAÍDO na distribuição do acaso.
+
+    O veredito usa 1 desvio-padrão como régua: dentro de esperado ± desvio é
+    "típico" — o que o acaso produz na maior parte das vezes. Não é elogio nem
+    crítica ao jogo: como todas as combinações têm a mesma chance, ficar acima
+    ou abaixo é só onde a moeda caiu naquele concurso."""
+    d = distribuicao_acertos(k, loteria)
+    linha = next((l for l in d["linhas"] if l["acertos"] == acertos), None)
+    esperado, desvio = d["esperado"], d["desvio"]
+    diff = acertos - esperado
+    if desvio and diff > desvio:
+        nivel, veredito = "acima", "acima do esperado"
+    elif desvio and diff < -desvio:
+        nivel, veredito = "abaixo", "abaixo do esperado"
+    else:
+        nivel, veredito = "tipico", "dentro do esperado"
+    return {
+        "dezenas": k,
+        "acertos": acertos,
+        "esperado": esperado,
+        "desvio": desvio,
+        "diferenca": round(diff, 4),
+        "nivel": nivel,
+        "veredito": veredito,
+        "faixa_tipica": [
+            max(0, round(esperado - desvio, 1)),
+            round(esperado + desvio, 1),
+        ],
+        "pct_exato": linha["pct"] if linha else 0.0,
+        "pct_pior": round(100 * linha["p_menos"], 2) if linha else None,
+        "pct_melhor": round(100 * linha["p_mais"], 2) if linha else None,
+        "premiado": d["premiado"],
+        "menor_faixa_premiada": d["menor_faixa_premiada"],
+    }
+
+
 def garantia_minima(k: int, cfg: dict) -> int:
     """Acertos que uma aposta de k dezenas garante SEMPRE, por casa dos pombos.
 

@@ -12,13 +12,32 @@ DRAWS = [
 
 def test_conferir_faixas():
     resultado = [1, 2, 3, 4, 5, 6]
-    assert checker.conferir([1, 2, 3, 4, 5, 6], resultado) == {"acertos": 6, "faixa": "sena"}
+    c = checker.conferir([1, 2, 3, 4, 5, 6], resultado)
+    assert (c["acertos"], c["faixa"]) == (6, "sena")
     assert checker.conferir([1, 2, 3, 4, 5, 60], resultado)["faixa"] == "quina"
     assert checker.conferir([1, 2, 3, 4, 50, 60], resultado)["faixa"] == "quadra"
     assert checker.conferir([1, 2, 3, 40, 50, 60], resultado)["faixa"] is None
     # aposta de 10 dezenas cobrindo todas as 6
     aposta10 = [1, 2, 3, 4, 5, 6, 10, 20, 30, 40]
-    assert checker.conferir(aposta10, resultado) == {"acertos": 6, "faixa": "sena"}
+    c10 = checker.conferir(aposta10, resultado)
+    assert (c10["acertos"], c10["faixa"]) == (6, "sena")
+
+
+def test_conferir_traz_avaliacao_do_acaso():
+    """A conferência situa o resultado na distribuição do acaso — a régua que
+    diz se os acertos foram normais. Ver generator.avaliar_acertos."""
+    resultado = list(range(1, 16))
+    # 9 acertos de 15 dezenas na Lotofácil é EXATAMENTE a média (15·15/25)
+    jogo = list(range(1, 10)) + list(range(16, 22))
+    av = checker.conferir(jogo, resultado, "lofa")["avaliacao"]
+    assert av["acertos"] == 9
+    assert av["esperado"] == 9.0
+    assert av["nivel"] == "tipico"
+    # a avaliação usa o TAMANHO da aposta: 6 acertos numa aposta simples da
+    # Mega é o extremo oposto — muito acima do esperado (0,6)
+    av_mega = checker.conferir([1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6])["avaliacao"]
+    assert av_mega["esperado"] == 0.6
+    assert av_mega["nivel"] == "acima"
 
 
 def test_backtest_reprodutivel_e_proximo_do_acaso():

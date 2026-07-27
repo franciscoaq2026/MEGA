@@ -38,9 +38,16 @@ const ESTRATEGIAS = [
 ]
 
 const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
+const num = (n, d = 2) =>
+  n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
 
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
+  // Acertos que o PURO ACASO entrega por jogo: escolher x sorteadas / total.
+  // Depende da loteria (0,6 na Mega; 9,0 na Lotofácil) — usar a constante da
+  // Mega em qualquer lugar transformaria o backtest da Lotofácil em absurdo.
+  const esperadoAcaso = (cfg.escolher * cfg.sorteadas) / cfg.total
+  const faixaMinima = Math.min(...cfg.premios.map((p) => p.ac))
   const dezenasFixas = cfg.escolher === cfg.maxEscolher
   // Formato da aposta. 'simples' = N bilhetes de escolher dezenas, comprados
   // separados. 'multipla' = UM bilhete com mais dezenas (o fechamento).
@@ -64,6 +71,8 @@ export default function GerarJogos() {
   const [backtest, setBacktest] = useState(null)
   const [backtestBusy, setBacktestBusy] = useState(false)
   const [backtestError, setBacktestError] = useState(null)
+  // O backend manda o esperado calculado; o valor local é só o fallback.
+  const baseAcaso = backtest?.esperado_por_jogo ?? esperadoAcaso
 
   useEffect(() => {
     apiGet('/status')
@@ -500,10 +509,12 @@ export default function GerarJogos() {
         title={
           <span className="inline-flex items-center gap-1.5">
             As estratégias funcionam? Backtest honesto
-            <Help text="Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de 0,6 acerto/jogo. Rode e veja: todas empatam com o puro acaso." />
+            <Help
+              text={`Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de ${num(esperadoAcaso, 1)} acerto/jogo (o que o acaso entrega nesta loteria: ${cfg.escolher} × ${cfg.sorteadas} ÷ ${cfg.total}). Rode e veja: todas empatam com o puro acaso.`}
+            />
           </span>
         }
-        subtitle="Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (0,6 acerto por jogo)"
+        subtitle={`Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (${num(esperadoAcaso, 1)} acerto por jogo)`}
       >
         {!backtest && (
           <button
@@ -522,28 +533,44 @@ export default function GerarJogos() {
                 <tr className="text-xs text-zinc-500 border-b border-zinc-200">
                   <th className="py-1.5 font-medium">Estratégia</th>
                   <th className="py-1.5 font-medium text-right">Média de acertos/jogo</th>
-                  <th className="py-1.5 font-medium text-right">vs. acaso (0,6)</th>
+                  <th className="py-1.5 font-medium text-right">
+                    vs. acaso ({num(baseAcaso, 1)})
+                  </th>
+                  <th className="py-1.5 font-medium text-right">Concursos com prêmio</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(backtest.estrategias).map(([nome, r]) => (
-                  <tr key={nome} className="border-b border-zinc-100 last:border-0">
-                    <td className="py-1.5">{ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}</td>
-                    <td className="py-1.5 text-right font-semibold tabular-nums">
-                      {r.media_acertos.toFixed(2).replace('.', ',')}
-                    </td>
-                    <td className="py-1.5 text-right tabular-nums text-zinc-500">
-                      {(r.media_acertos - 0.6 >= 0 ? '+' : '') +
-                        (r.media_acertos - 0.6).toFixed(2).replace('.', ',')}
-                    </td>
-                  </tr>
-                ))}
+                {Object.entries(backtest.estrategias).map(([nome, r]) => {
+                  const premiados = Object.entries(r.distrib ?? {}).reduce(
+                    (s, [ac, qtd]) => (Number(ac) >= faixaMinima ? s + qtd : s),
+                    0,
+                  )
+                  return (
+                    <tr key={nome} className="border-b border-zinc-100 last:border-0">
+                      <td className="py-1.5">
+                        {ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}
+                      </td>
+                      <td className="py-1.5 text-right font-semibold tabular-nums">
+                        {num(r.media_acertos)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                        {(r.media_acertos - baseAcaso >= 0 ? '+' : '') +
+                          num(r.media_acertos - baseAcaso)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                        {premiados}/{backtest.concursos_simulados}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             <p className="text-xs text-zinc-500">
               Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} · todas as
-              estratégias flutuam em torno de 0,6 — nenhuma “sabe” algo sobre o próximo sorteio. Se
-              alguma parecesse muito acima, seria sorte da amostra, não previsão.
+              estratégias flutuam em torno de {num(baseAcaso, 1)} — nenhuma “sabe” algo sobre o
+              próximo sorteio. Se alguma parecesse muito acima, seria sorte da amostra, não
+              previsão. A coluna da direita conta os concursos em que o jogo daquela estratégia
+              chegou a {faixaMinima} acertos ou mais (a faixa mínima premiada): também empatam.
             </p>
           </div>
         )}

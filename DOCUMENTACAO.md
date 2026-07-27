@@ -299,13 +299,15 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/stats/pairs?limit` | duplas mais frequentes |
 | `GET /api/stats/xray/{n}` | raio-X do concurso n (véspera) |
 | `GET /api/strategies` | nomes/descrições das estratégias |
-| `POST /api/generate` | `{estrategia, jogos≤20, dezenas 6–20, anti_rateio}` |
+| `POST /api/generate` | `{estrategia, jogos≤20, dezenas 6–20, anti_rateio, espalhar}` → jogos + `sobreposicao` |
 | `GET /api/odds?dezenas&preco_simples` | probabilidades exatas + custo |
 | `GET /api/analysis/ranges` | faixas típicas (p10–p90) de cada indicador |
 | `POST /api/generate-advanced` | `{jogos≤50, dezenas, filtros{...}, incluir[], excluir[], anti_rateio}` |
 | `POST /api/score` | termômetro: `{dezenas[6–20]}` → nota + critérios |
 | `POST /api/wheel` | fechamento: `{dezenas[7–20], tipo: completa\|reduzida, garantia: 4\|5}` |
-| `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` |
+| `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
+| `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
+| `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
 | `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias |
 
 ---
@@ -351,9 +353,81 @@ teste: sena 6 dezenas = 1/50.063.860; quadra = 1/2.332; 20 dezenas → sena
 Para cada um dos últimos N concursos (default 100): gera 1 jogo de cada
 estratégia usando **somente** os sorteios anteriores àquele concurso (sem
 vazamento de futuro), com RNG semeado pelo número do concurso
-(reprodutível), e conta acertos. Esperado pelo acaso: 6·6/60 = **0,6
-acertos/jogo** — o resultado empírico de todas as estratégias flutua em torno
-disso, demonstrando a ausência de poder preditivo.
+(reprodutível), e conta acertos. Esperado pelo acaso:
+`escolher · sorteadas / total` — **0,6 acertos/jogo** na Mega (6·6/60) e
+**9,0** na Lotofácil (15·15/25). O resultado empírico de todas as estratégias
+flutua em torno disso, demonstrando a ausência de poder preditivo. Medido nos
+últimos 1.000 concursos da Lotofácil: aleatório 9,07 · frequência 9,03 ·
+atrasados 9,01 · balanceado 9,04, com 10,4% a 11,3% dos jogos chegando aos 11
+acertos da faixa mínima (o teórico é 10,6%).
+
+### 6.5.1 Régua de acertos (`distribuicao_acertos`, `avaliar_acertos`)
+A mesma hipergeométrica de §6.4 lida ao contrário: em vez de "qual a chance da
+faixa X", responde **"quantos acertos esperar"** — o que permite julgar um
+resultado já saído.
+
+    esperado = k · sorteadas / total
+    var      = k · p · (1−p) · (total−k)/(total−1),  p = sorteadas/total
+
+Na Lotofácil simples: 9,00 ± 1,22 acertos, moda 9, e só 10,59% dos jogos (1 em
+9) chegam aos 11 que pagam. O veredito de `avaliar_acertos` usa 1 desvio-padrão
+como régua — 8 a 10 acertos é *dentro do esperado*, 11+ é *acima*, ≤7 é
+*abaixo* — e vem embutido em cada linha de `POST /api/check`, com as caudas
+estritas (quantos % dos jogos possíveis fariam menos e mais acertos). É o que
+impede a leitura errada de que "9 de 15" foi um bom jogo: é exatamente a média
+de qualquer combinação.
+
+### 6.5.2 Sobreposição entre bilhetes (`piso_sobreposicao`, `resumo_sobreposicao`)
+Com 2 bilhetes de k dezenas, a distribuição CONJUNTA dos acertos depende só de
+quantas dezenas eles compartilham — quais dezenas são é irrelevante. Isso
+encerra a pergunta "qual estratégia acerta mais com vários jogos": nenhuma. O
+que existe é sobreposição, e ela tem piso por casa dos pombos:
+
+    piso = max(0, 2k − total)
+
+Mega: 0 (dois jogos podem ser disjuntos). Lotofácil: **5** — dois jogos de 15
+dezenas em 25 não podem dividir menos que isso. Por enumeração exata dos
+3.268.760 sorteios, 2 bilhetes de 15 dezenas:
+
+| sobreposição | premiar em ≥1 | melhor bilhete | soma dos acertos | retorno fixo |
+|---|---|---|---|---|
+| 5 ou 6 (piso) | 21,178% | 9,88 | 18,00 | R$ 1,80 |
+| 9 (típico sem espalhar) | 20,184% | 9,68 | 18,00 | R$ 1,80 |
+| 15 (bilhetes iguais) | 10,589% | 9,00 | 18,00 | R$ 1,80 |
+
+Sobreposição 5 e 6 dão exatamente a mesma chance (15733/74290) — não é
+arredondamento. O retorno médio e a soma dos acertos não se movem em nenhum
+caso: espalhar redistribui, não aumenta. `gerar(espalhar=True)` usa o piso como
+alvo de parada (mirar em "zero repetidas" nunca terminava na Lotofácil) e
+`/generate` devolve a sobreposição obtida contra o piso.
+
+### 6.5.3 Chance de levar algo com N bilhetes (`odds_carteira`)
+`1-(1-p)^N` é a conta de bilhetes independentes. Ela vale **exatamente** para o
+prêmio principal (dois bilhetes distintos nunca o ganham juntos), mas para
+"levar algum prêmio" é apenas uma referência — não é piso nem teto. O valor real
+depende de como os bilhetes se sobrepõem:
+
+- **Teto**: `min(1, N·p)`, pela união. Atingido quando nenhum par pode premiar
+  no mesmo sorteio, isto é, sobreposição ≤ `limiar_sobreposicao` (§6.5.2).
+- **Mega**: o gerador com `espalhar` mantém sobreposição máxima ≤ 1 para todo N
+  até 20 (6 dezenas em 60 dão espaço de sobra), então `P = N·p` exatamente.
+  Flag `espalhar_na_zona_gratuita` na config.
+- **Lotofácil**: a zona gratuita só é alcançável com 2 bilhetes. Com 3+, o piso
+  de sobreposição já a ultrapassa, e não há fórmula fechada — os valores vêm
+  medidos por enumeração exata dos 3.268.760 sorteios (`carteira_espalhada`,
+  média de 12 conjuntos gerados por N):
+
+| Bilhetes | Soltos `1-(1-p)^N` | Espalhados (enumerado) |
+|---|---|---|
+| 2 | 20,06% | 21,18% (= 2p, o teto) |
+| 5 | 42,86% | 47,13% |
+| 12 | 73,90% | 80,89% |
+| 20 | 89,34% | 94,11% |
+
+Antes desta correção `/odds/carteira` ignorava a opção `espalhar`, e a tela
+"Probabilidades reais" mostrava o número de bilhetes soltos mesmo com espalhar
+ligado — o painel não reagia ao checkbox. O retorno médio segue idêntico nos
+dois modos: espalhar redistribui, não aumenta.
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

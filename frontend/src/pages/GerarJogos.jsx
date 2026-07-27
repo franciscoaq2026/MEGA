@@ -38,9 +38,16 @@ const ESTRATEGIAS = [
 ]
 
 const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
+const num = (n, d = 2) =>
+  n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
 
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
+  // Acertos que o PURO ACASO entrega por jogo: escolher x sorteadas / total.
+  // Depende da loteria (0,6 na Mega; 9,0 na Lotofácil) — usar a constante da
+  // Mega em qualquer lugar transformaria o backtest da Lotofácil em absurdo.
+  const esperadoAcaso = (cfg.escolher * cfg.sorteadas) / cfg.total
+  const faixaMinima = Math.min(...cfg.premios.map((p) => p.ac))
   const dezenasFixas = cfg.escolher === cfg.maxEscolher
   // Formato da aposta. 'simples' = N bilhetes de escolher dezenas, comprados
   // separados. 'multipla' = UM bilhete com mais dezenas (o fechamento).
@@ -64,6 +71,8 @@ export default function GerarJogos() {
   const [backtest, setBacktest] = useState(null)
   const [backtestBusy, setBacktestBusy] = useState(false)
   const [backtestError, setBacktestError] = useState(null)
+  // O backend manda o esperado calculado; o valor local é só o fallback.
+  const baseAcaso = backtest?.esperado_por_jogo ?? esperadoAcaso
 
   useEffect(() => {
     apiGet('/status')
@@ -93,11 +102,15 @@ export default function GerarJogos() {
 
   // Chance acumulada de N bilhetes simples separados — a conta que interessa
   // a quem joga simples, e a base da comparação com a aposta múltipla.
+  // Depende de `espalharAtivo`: espalhar muda a chance de levar ALGUM prêmio,
+  // então o painel tem de reagir ao checkbox (antes ficava parado no valor de
+  // bilhetes soltos, mesmo com a opção ligada).
+  const espalharAtivo = simples && espalhar && qtdJogos > 1
   useEffect(() => {
-    apiGet(`/odds/carteira?jogos=${qtdJogos}`)
+    apiGet(`/odds/carteira?jogos=${qtdJogos}&espalhar=${espalharAtivo}`)
       .then(setCarteira)
       .catch(() => setCarteira(null))
-  }, [qtdJogos])
+  }, [qtdJogos, espalharAtivo])
 
   function salvar(i, jogo) {
     if (!concursoSalvar) return
@@ -364,6 +377,7 @@ export default function GerarJogos() {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                   <p className="text-xs text-emerald-900">
                     Chance de levar <strong>algum</strong> prêmio
+                    {carteira.espalhar ? ' (espalhando)' : ''}
                   </p>
                   <p className="font-bold tabular-nums text-emerald-900">
                     {fmt(carteira.qualquer.pct)}%{' '}
@@ -371,10 +385,28 @@ export default function GerarJogos() {
                       (1 em {fmt(carteira.qualquer.one_in)})
                     </span>
                   </p>
-                  {espalhar && qtdJogos > 1 && (
-                    <p className="text-[11px] text-emerald-800 mt-0.5">
-                      espalhando, essa frequência sobe alguns pontos — o retorno médio não muda
+                  {carteira.espalhar ? (
+                    <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
+                      {carteira.metodo === 'exato' ? (
+                        <>
+                          este é o <strong>teto</strong>: espalhados, os seus bilhetes não podem
+                          premiar dois no mesmo sorteio, então a chance é a de um bilhete vezes{' '}
+                          {qtdJogos}, sem perda nenhuma
+                        </>
+                      ) : (
+                        <>
+                          sem espalhar seria <strong>{fmt(carteira.qualquer_solto.pct)}%</strong> —
+                          medido por enumeração de todos os sorteios possíveis
+                        </>
+                      )}
+                      . O retorno médio é o mesmo nos dois casos.
                     </p>
+                  ) : (
+                    qtdJogos > 1 && (
+                      <p className="text-[11px] text-emerald-800 mt-0.5">
+                        marcando “espalhar os jogos” essa frequência sobe — o retorno médio não muda
+                      </p>
+                    )
                   )}
                 </div>
               )}
@@ -445,6 +477,46 @@ export default function GerarJogos() {
           title={`Jogos gerados — ${ESTRATEGIAS.find((e) => e.id === result.estrategia)?.nome}`}
           subtitle={result.aviso}
         >
+          {result.sobreposicao && (
+            <div
+              className={`text-xs rounded-lg border px-3 py-2 mb-3 leading-relaxed ${
+                result.sobreposicao.sem_custo
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-zinc-50 border-zinc-200 text-zinc-600'
+              }`}
+            >
+              Seus bilhetes repetem no máximo{' '}
+              <strong>{result.sobreposicao.maxima} dezenas</strong> entre si (média{' '}
+              {num(result.sobreposicao.media, 1)}).{' '}
+              {result.sobreposicao.sem_custo ? (
+                <>
+                  Até <strong>{result.sobreposicao.limiar}</strong> não custa nada: dois bilhetes só
+                  podem premiar no mesmo sorteio a partir de {result.sobreposicao.limiar + 1}{' '}
+                  dezenas em comum, então a sua chance de levar algo já está no{' '}
+                  <strong>máximo possível</strong> — a de um bilhete, multiplicada por{' '}
+                  {result.jogos.length}.
+                </>
+              ) : (
+                <>
+                  Acima de <strong>{result.sobreposicao.limiar}</strong> cada dezena repetida troca
+                  “levar algo mais vezes” por “levar em dois bilhetes de uma vez”. O retorno médio
+                  não muda em nenhum dos casos — e é só isto que a escolha de dezenas pode mexer num
+                  conjunto de bilhetes: a estratégia em si não altera nada.
+                </>
+              )}
+              {result.sobreposicao.piso > 0 && (
+                <>
+                  {' '}
+                  O mínimo possível na {cfg.nome} é <strong>{result.sobreposicao.piso}</strong>,
+                  porque {cfg.escolher}+{cfg.escolher} dezenas não cabem em {cfg.total} sem encostar
+                  {!result.sobreposicao.otimo_possivel && (
+                    <> — com {result.jogos.length} bilhetes a zona gratuita é inalcançável</>
+                  )}
+                  .
+                </>
+              )}
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm mb-3">
             <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
             <input
@@ -500,10 +572,12 @@ export default function GerarJogos() {
         title={
           <span className="inline-flex items-center gap-1.5">
             As estratégias funcionam? Backtest honesto
-            <Help text="Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de 0,6 acerto/jogo. Rode e veja: todas empatam com o puro acaso." />
+            <Help
+              text={`Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de ${num(esperadoAcaso, 1)} acerto/jogo (o que o acaso entrega nesta loteria: ${cfg.escolher} × ${cfg.sorteadas} ÷ ${cfg.total}). Rode e veja: todas empatam com o puro acaso.`}
+            />
           </span>
         }
-        subtitle="Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (0,6 acerto por jogo)"
+        subtitle={`Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (${num(esperadoAcaso, 1)} acerto por jogo)`}
       >
         {!backtest && (
           <button
@@ -522,28 +596,44 @@ export default function GerarJogos() {
                 <tr className="text-xs text-zinc-500 border-b border-zinc-200">
                   <th className="py-1.5 font-medium">Estratégia</th>
                   <th className="py-1.5 font-medium text-right">Média de acertos/jogo</th>
-                  <th className="py-1.5 font-medium text-right">vs. acaso (0,6)</th>
+                  <th className="py-1.5 font-medium text-right">
+                    vs. acaso ({num(baseAcaso, 1)})
+                  </th>
+                  <th className="py-1.5 font-medium text-right">Concursos com prêmio</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(backtest.estrategias).map(([nome, r]) => (
-                  <tr key={nome} className="border-b border-zinc-100 last:border-0">
-                    <td className="py-1.5">{ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}</td>
-                    <td className="py-1.5 text-right font-semibold tabular-nums">
-                      {r.media_acertos.toFixed(2).replace('.', ',')}
-                    </td>
-                    <td className="py-1.5 text-right tabular-nums text-zinc-500">
-                      {(r.media_acertos - 0.6 >= 0 ? '+' : '') +
-                        (r.media_acertos - 0.6).toFixed(2).replace('.', ',')}
-                    </td>
-                  </tr>
-                ))}
+                {Object.entries(backtest.estrategias).map(([nome, r]) => {
+                  const premiados = Object.entries(r.distrib ?? {}).reduce(
+                    (s, [ac, qtd]) => (Number(ac) >= faixaMinima ? s + qtd : s),
+                    0,
+                  )
+                  return (
+                    <tr key={nome} className="border-b border-zinc-100 last:border-0">
+                      <td className="py-1.5">
+                        {ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}
+                      </td>
+                      <td className="py-1.5 text-right font-semibold tabular-nums">
+                        {num(r.media_acertos)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                        {(r.media_acertos - baseAcaso >= 0 ? '+' : '') +
+                          num(r.media_acertos - baseAcaso)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                        {premiados}/{backtest.concursos_simulados}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             <p className="text-xs text-zinc-500">
               Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} · todas as
-              estratégias flutuam em torno de 0,6 — nenhuma “sabe” algo sobre o próximo sorteio. Se
-              alguma parecesse muito acima, seria sorte da amostra, não previsão.
+              estratégias flutuam em torno de {num(baseAcaso, 1)} — nenhuma “sabe” algo sobre o
+              próximo sorteio. Se alguma parecesse muito acima, seria sorte da amostra, não
+              previsão. A coluna da direita conta os concursos em que o jogo daquela estratégia
+              chegou a {faixaMinima} acertos ou mais (a faixa mínima premiada): também empatam.
             </p>
           </div>
         )}

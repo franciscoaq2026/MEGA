@@ -24,6 +24,46 @@ const FAIXA_STYLE = {
 
 const ORIGEM_LABEL = { manual: 'Meu jogo (manual)', app: 'Jogo do app' }
 
+const num = (n, d = 2) =>
+  n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
+
+// Cor do veredito: verde para acima do esperado, âmbar para abaixo, neutro
+// para o que o acaso produz na maioria das vezes. "Típico" é deliberadamente
+// cinza — não é bom nem ruim, é o resultado normal.
+const NIVEL_STYLE = {
+  acima: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+  tipico: 'bg-zinc-50 border-zinc-200 text-zinc-600',
+  abaixo: 'bg-amber-50 border-amber-200 text-amber-900',
+}
+
+/* Situa os acertos do jogo na distribuição do acaso. Sem isto não há como
+   julgar o próprio resultado: 9 acertos na Lotofácil parece muito e é
+   exatamente a média de QUALQUER jogo de 15 dezenas. */
+function Avaliacao({ av, faixa }) {
+  if (!av) return null
+  const [lo, hi] = av.faixa_tipica
+  const faltaram = av.menor_faixa_premiada != null ? av.menor_faixa_premiada - av.acertos : null
+  return (
+    <p
+      className={`text-[11px] border rounded px-2 py-1 mt-2 leading-relaxed ${
+        NIVEL_STYLE[av.nivel] ?? NIVEL_STYLE.tipico
+      }`}
+    >
+      <strong className="first-letter:uppercase">{av.veredito}</strong> — um jogo de {av.dezenas}{' '}
+      dezenas faz {num(av.esperado, 1)} acertos em média (o normal é cair entre {num(lo, 1)} e{' '}
+      {num(hi, 1)}). Contra este resultado, {num(av.pct_pior, 0)}% de todos os jogos possíveis
+      teriam acertado menos e {num(av.pct_melhor, 0)}% teriam acertado mais.
+      {!faixa && faltaram > 0 && (
+        <>
+          {' '}
+          Faltaram <strong>{faltaram}</strong> para a faixa mínima ({av.menor_faixa_premiada}{' '}
+          acertos), que sai em {num(av.premiado.pct, 1)}% dos jogos — 1 em {av.premiado.one_in}.
+        </>
+      )}
+    </p>
+  )
+}
+
 function AcertosBadge({ check }) {
   if (!check?.encontrado) {
     return (
@@ -63,6 +103,7 @@ function BetItem({ bet, check, onRemove }) {
         </button>
       </div>
       <BallRow dezenas={bet.dezenas} size="sm" highlightSet={matched} />
+      {check?.encontrado && <Avaliacao av={check.avaliacao} faixa={check.faixa} />}
       <p className="text-[10px] text-zinc-400 mt-1.5">
         registrado em {new Date(bet.criado_em).toLocaleDateString('pt-BR')}
       </p>
@@ -75,6 +116,7 @@ export default function MeusJogos() {
   const [bets, setBets] = useState([])
   const [checks, setChecks] = useState({}) // bet.id -> resultado da conferência
   const [status, setStatus] = useState(null)
+  const [regua, setRegua] = useState(null) // distribuição de acertos da aposta simples
   const [concurso, setConcurso] = useState('')
   const [dezenas, setDezenas] = useState([])
   const [message, setMessage] = useState(null)
@@ -107,6 +149,12 @@ export default function MeusJogos() {
       // backend fora do ar: mostra os jogos sem conferência
       setChecks({})
     }
+  }, [code])
+
+  useEffect(() => {
+    apiGet('/acertos-esperados')
+      .then(setRegua)
+      .catch(() => setRegua(null))
   }, [code])
 
   useEffect(() => {
@@ -359,6 +407,65 @@ export default function MeusJogos() {
           </div>
         </div>
       </Card>
+
+      {regua && (() => {
+        // Escala das barras: a maior probabilidade da distribuição (a moda),
+        // não a primeira linha — `linhas` vem em ordem de acertos.
+        const maxPct = Math.max(...regua.linhas.map((l) => l.pct))
+        return (
+        <Card
+          title={`Quantos acertos esperar de um jogo de ${regua.dezenas} dezenas`}
+          subtitle={`Média ${num(regua.esperado, 1)} acertos · a régua para saber se um resultado foi bom, ruim ou apenas normal`}
+        >
+          <div className="space-y-1">
+            {regua.linhas
+              .filter((l) => l.pct >= 0.01 || l.faixa)
+              .sort((a, b) => b.acertos - a.acertos)
+              .map((l) => (
+                <div key={l.acertos} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-6 text-right tabular-nums font-semibold text-zinc-600">
+                    {l.acertos}
+                  </span>
+                  <div className="flex-1 flex items-center gap-1.5">
+                    <div
+                      className={`h-3 rounded-sm min-w-[2px] ${
+                        l.faixa ? cfg.barClass : 'bg-zinc-300'
+                      }`}
+                      style={{ width: `${(l.pct / maxPct) * 100 || 0}%` }}
+                      title={`${l.pct}%`}
+                    />
+                    <span className="tabular-nums text-zinc-500">
+                      {l.pct >= 0.01 ? `${num(l.pct, 2)}%` : '~0%'}
+                    </span>
+                    {l.faixa && (
+                      <span className="text-zinc-400">
+                        · paga prêmio ({l.faixa})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
+          <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
+            O mais provável é <strong>{regua.mais_provavel} acertos</strong>, e a chance de chegar à
+            faixa mínima ({regua.menor_faixa_premiada} acertos) é de{' '}
+            <strong>{num(regua.premiado.pct, 1)}%</strong> — 1 em {regua.premiado.one_in}. Isso vale
+            para qualquer combinação, gerada pelo app ou escolhida por você: barras coloridas são as
+            faixas que pagam, e é só nelas que o dinheiro volta.
+          </p>
+          <p className="text-xs text-zinc-500 mt-2 leading-relaxed border-t border-zinc-100 pt-2">
+            Para <strong>subir os acertos</strong> não existe estratégia — existem duas alavancas, e
+            as duas custam na mesma proporção: marcar mais dezenas no bilhete (cada dezena a mais
+            sobe a média em {num(cfg.sorteadas / cfg.total, 1)} acerto) ou jogar mais bilhetes. Veja
+            os dois preços em{' '}
+            <Link to={`/${code}/probabilidades`} className="text-emerald-700 underline">
+              Probabilidades
+            </Link>
+            .
+          </p>
+        </Card>
+        )
+      })()}
 
       {cfg.premios && (
         <Card

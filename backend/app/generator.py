@@ -137,6 +137,46 @@ GERADORES = {
 }
 
 
+def piso_sobreposicao(k: int, cfg: dict) -> int:
+    """Dezenas que dois bilhetes de k dezenas SEMPRE compartilham.
+
+    Casa dos pombos, como em `garantia_minima`: dois bilhetes ocupam 2k lugares
+    num volante de `total` dezenas, então pelo menos 2k - total têm de coincidir.
+
+        piso = max(0, 2k - total)
+
+    Na Mega dá 0 (6+6 < 60: dois jogos podem ser totalmente disjuntos). Na
+    Lotofácil dá 5 — dois jogos de 15 dezenas em 25 NÃO PODEM dividir menos de
+    5 dezenas, por mais que se tente espalhar. É o limite de quanto a opção
+    "espalhar" pode entregar, e o motivo de ela render pouco lá."""
+    return max(0, 2 * k - cfg["total"])
+
+
+def limiar_sobreposicao(cfg: dict) -> int:
+    """Sobreposição máxima que ainda não custa NADA em "levar algum prêmio".
+
+    Dois bilhetes só podem premiar no MESMO sorteio se somarem 2·faixa_mínima
+    acertos, e a soma dos acertos de dois bilhetes é no máximo
+    `sobreposição + sorteadas` (as dezenas fora da interseção competem pelas
+    mesmas bolas). Logo prêmio duplo só é possível a partir de
+    `2·faixa_mínima − sorteadas`, e abaixo disso:
+
+        P(levar algo em N bilhetes) = N · p, EXATAMENTE
+
+    porque a inclusão-exclusão não tem termo para subtrair — nenhum par pode
+    ganhar junto. É o teto: nenhuma disposição de N bilhetes supera N·p.
+
+        limiar = 2·faixa_mínima − sorteadas − 1
+
+    Mega: 1 (dividir 1 dezena é tão bom quanto dividir nenhuma). Lotofácil: 6
+    — e como o piso lá é 5, dois bilhetes de 15 dezenas conseguem ficar na zona
+    gratuita, o que explica por que sobreposição 5 e 6 dão a MESMA chance de
+    premiar (21,178% = 2 × 10,589%)."""
+    if not cfg["faixas"]:
+        return -1
+    return 2 * min(cfg["faixas"]) - cfg["sorteadas"] - 1
+
+
 def padrao_popular(
     dezenas: list[int],
     premiadas_passadas: set[tuple] | None = None,
@@ -204,7 +244,12 @@ def gerar(
     independentemente da correlação entre eles. A chance do prêmio principal
     também não muda: são N em C(total, escolher) de qualquer jeito.
 
-    É, portanto, preferência de formato — não vantagem."""
+    É, portanto, preferência de formato — não vantagem.
+
+    Com 2 bilhetes o assunto se fecha em contas exatas: a distribuição conjunta
+    dos acertos depende SÓ de quantas dezenas os dois compartilham — quais
+    dezenas são não muda nada. Logo nenhuma estratégia mexe nisso; só a
+    sobreposição mexe, e ela tem piso (ver `piso_sobreposicao`)."""
     cfg = lotteries.get_loteria(loteria)
     numbers = lotteries.numbers(cfg)
     rng = rng or random.Random()
@@ -213,6 +258,10 @@ def gerar(
     resultado = []
     vistos: set[tuple] = set()
     escolhidos: list[set[int]] = []
+    # Melhor sobreposição alcançável. Buscar "zero repetidas" só faz sentido
+    # onde 2k <= total (Mega); na Lotofácil o piso é 5 e mirar em 0 fazia o
+    # laço gastar todos os candidatos sem nunca reconhecer o ótimo.
+    piso = piso_sobreposicao(dezenas, cfg)
 
     for _ in range(jogos):
         jogo, motivos = None, []
@@ -234,7 +283,7 @@ def gerar(
             sobrep = max(len(set(cand) & e) for e in escolhidos)
             if melhor_sobrep is None or sobrep < melhor_sobrep:
                 melhor, melhor_sobrep, motivos = cand, sobrep, cand_motivos
-                if sobrep == 0:
+                if sobrep <= piso:
                     break
         if jogo is None:
             # espalhando, ou nenhum candidato passou nos filtros: usa o melhor
@@ -257,14 +306,89 @@ def gerar(
     return resultado
 
 
-def odds_carteira(n_jogos: int, loteria: str = "mega") -> dict:
+def resumo_sobreposicao(jogos: list[dict], k: int, loteria: str = "mega") -> dict | None:
+    """Quanto os bilhetes do pedido se repetem entre si, contra o piso teórico.
+
+    É a única coisa que a escolha de dezenas pode mexer num conjunto de vários
+    bilhetes: com 2 bilhetes, a distribuição conjunta dos acertos depende só da
+    sobreposição, então "qual estratégia acerta mais" não tem resposta — "quão
+    espalhados estão os bilhetes" tem.
+
+    Verificado por enumeração exata dos 3.268.760 sorteios (2 bilhetes de 15):
+
+        sobreposição    5 ou 6    9 (típico sem espalhar)    15 (bilhetes iguais)
+        premiar em >=1  21,18%                     20,18%                 10,59%
+        melhor bilhete    9,88                       9,68                   9,00
+        retorno médio   R$ 1,80                    R$ 1,80                R$ 1,80
+
+    O retorno médio não se move — espalhar redistribui, não aumenta.
+
+    `sem_custo` é o que realmente importa, e é mais generoso que o piso: até
+    `limiar_sobreposicao` a chance de levar algo já está no teto de N·p, então
+    apertar mais a sobreposição não compra nada."""
+    if len(jogos) < 2:
+        return None
+    cfg = lotteries.get_loteria(loteria)
+    conjuntos = [set(j["dezenas"]) for j in jogos]
+    pares = [
+        len(a & b) for i, a in enumerate(conjuntos) for b in conjuntos[i + 1:]
+    ]
+    piso = piso_sobreposicao(k, cfg)
+    limiar = limiar_sobreposicao(cfg)
+    maxima = max(pares)
+    return {
+        "maxima": maxima,
+        "media": round(sum(pares) / len(pares), 2),
+        "piso": piso,
+        "no_piso": maxima <= piso,
+        "limiar": limiar,
+        "sem_custo": maxima <= limiar,
+        # Nenhum par PODE ficar abaixo do piso, então quando o piso já está na
+        # zona gratuita o ótimo é sempre alcançável — vale dizer isso ao usuário.
+        "otimo_possivel": piso <= limiar,
+    }
+
+
+def _qualquer_espalhado(n_jogos: int, p_uma: float, cfg: dict) -> tuple[float, str]:
+    """Chance de levar algo com N bilhetes ESPALHADOS pelo gerador do app.
+
+    Duas situações, e as duas são exatas — não são estimativas:
+
+    1. Zona gratuita (`limiar_sobreposicao`): se nenhum par de bilhetes pode
+       premiar no mesmo sorteio, a inclusão-exclusão não tem termo a subtrair e
+       P = N·p, o teto absoluto. Na Mega o gerador fica nessa zona (sobreposição
+       máxima 1) para todo N até 20 — verificado em teste.
+    2. Fora dela, o valor depende de COMO os bilhetes se sobrepõem, então não há
+       fórmula fechada: usamos a tabela medida por enumeração de todos os
+       sorteios (`carteira_espalhada` em lotteries.py).
+
+    Sem tabela e fora da zona, cai no independente `1-(1-p)^N`, que é o piso."""
+    if cfg.get("espalhar_na_zona_gratuita") and n_jogos * p_uma <= 1:
+        return n_jogos * p_uma, "exato"
+    tabela = cfg.get("carteira_espalhada") or {}
+    if n_jogos in tabela:
+        return tabela[n_jogos], "enumerado"
+    return 1 - (1 - p_uma) ** n_jogos, "independente"
+
+
+def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -> dict:
     """Probabilidade acumulada de N apostas simples SEPARADAS.
 
     Para cada faixa, a chance de pelo menos uma das N apostas bater. Como a
     chance marginal é a mesma para qualquer sorteio, apostas distintas se
     comportam como ensaios independentes: P = 1 - (1-p)^N. Vale exatamente
-    para o prêmio principal; para "ganhar algo" é o piso, porque espalhar os
-    jogos melhora esse número (ver `gerar(espalhar=True)`)."""
+    para o prêmio principal, em que dois bilhetes distintos nunca ganham juntos.
+
+    Para "ganhar algo" a independência é só uma REFERÊNCIA, não um limite: o
+    valor real depende de como os bilhetes se sobrepõem, e pode ficar acima
+    (espalhados) ou abaixo (bilhetes parecidos, N grande) da fórmula. O teto
+    verdadeiro é o da união, min(1, N·p), atingido quando nenhum par pode
+    premiar no mesmo sorteio (ver `limiar_sobreposicao`).
+
+    Com `espalhar=True` devolvemos o número correspondente ao que o app
+    realmente gera — antes esta função ignorava a opção, e a tela mostrava o
+    valor de bilhetes soltos mesmo com "espalhar" ligado. O retorno médio é o
+    mesmo nos dois casos."""
     cfg = lotteries.get_loteria(loteria)
     base = odds(cfg["escolher"], cfg["preco"], loteria)
     faixas = {}
@@ -272,16 +396,28 @@ def odds_carteira(n_jogos: int, loteria: str = "mega") -> dict:
         p = 1 - (1 - f["prob"]) ** n_jogos
         faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
-    qualquer = 1 - (1 - p_uma) ** n_jogos
+    if espalhar and n_jogos > 1:
+        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg)
+    else:
+        qualquer, metodo = 1 - (1 - p_uma) ** n_jogos, "independente"
+    solto = 1 - (1 - p_uma) ** n_jogos
     return {
         "jogos": n_jogos,
         "dezenas": cfg["escolher"],
         "custo_estimado": round(n_jogos * cfg["preco"], 2),
+        "espalhar": bool(espalhar and n_jogos > 1),
+        "metodo": metodo,
         "faixas": faixas,
         "qualquer": {
             "prob": qualquer,
             "one_in": round(1 / qualquer, 2) if qualquer else None,
             "pct": round(100 * qualquer, 2),
+        },
+        # O mesmo dinheiro em bilhetes soltos, para a comparação ficar honesta.
+        "qualquer_solto": {
+            "prob": solto,
+            "one_in": round(1 / solto, 2) if solto else None,
+            "pct": round(100 * solto, 2),
         },
     }
 
@@ -488,6 +624,104 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
         "equivalente_simples": odds_carteira(combos, loteria)["qualquer"]
         if k > escolher
         else None,
+    }
+
+
+def distribuicao_acertos(k: int, loteria: str = "mega") -> dict:
+    """Distribuição do nº de acertos de UMA aposta de k dezenas.
+
+    É a mesma hipergeométrica de `odds()`, olhada por outro ângulo: em vez de
+    "qual a chance da faixa X", responde "quantos acertos esperar". Serve para
+    julgar um resultado já saído — sem essa régua, 9 acertos na Lotofácil
+    parece ótimo, quando é exatamente a média.
+
+        esperado = k · sorteadas / total
+        var      = k · p · (1-p) · (total-k)/(total-1),  p = sorteadas/total
+
+    Lotofácil, aposta simples: esperado 9,00 e desvio 1,22 — ou seja, quase
+    todo jogo cai entre 7 e 11 acertos, e só a ponta ≥ 11 paga algo.
+    Mega, aposta simples: esperado 0,60 — acertar 1 dezena já é acima da média.
+
+    `p_menos`/`p_mais` são as caudas ESTRITAS (P(X < h) e P(X > h)), o que
+    permite dizer honestamente quantos jogos fariam pior e melhor."""
+    cfg = lotteries.get_loteria(loteria)
+    total, sorteadas = cfg["total"], cfg["sorteadas"]
+    faixas = cfg["faixas"]
+    denom = comb(total, k)
+    probs = {
+        h: comb(sorteadas, h) * comb(total - sorteadas, k - h) / denom
+        for h in range(0, min(sorteadas, k) + 1)
+        if total - sorteadas >= k - h
+    }
+    p = sorteadas / total
+    esperado = k * p
+    var = k * p * (1 - p) * (total - k) / (total - 1) if total > 1 else 0.0
+    acumulado = 0.0
+    linhas = []
+    for h in sorted(probs):
+        linhas.append(
+            {
+                "acertos": h,
+                "prob": probs[h],
+                "pct": round(100 * probs[h], 4),
+                "p_menos": acumulado,
+                "p_mais": max(0.0, 1 - acumulado - probs[h]),
+                "faixa": faixas.get(h),
+            }
+        )
+        acumulado += probs[h]
+    menor_faixa = min(faixas) if faixas else None
+    premiado = sum(pr for h, pr in probs.items() if menor_faixa is not None and h >= menor_faixa)
+    return {
+        "loteria": cfg["code"],
+        "dezenas": k,
+        "esperado": round(esperado, 4),
+        "desvio": round(sqrt(var), 4),
+        "mais_provavel": max(probs, key=lambda h: probs[h]),
+        "menor_faixa_premiada": menor_faixa,
+        "premiado": {
+            "prob": premiado,
+            "pct": round(100 * premiado, 4),
+            "one_in": round(1 / premiado) if premiado else None,
+        },
+        "linhas": linhas,
+    }
+
+
+def avaliar_acertos(acertos: int, k: int, loteria: str = "mega") -> dict:
+    """Situa um resultado JÁ SAÍDO na distribuição do acaso.
+
+    O veredito usa 1 desvio-padrão como régua: dentro de esperado ± desvio é
+    "típico" — o que o acaso produz na maior parte das vezes. Não é elogio nem
+    crítica ao jogo: como todas as combinações têm a mesma chance, ficar acima
+    ou abaixo é só onde a moeda caiu naquele concurso."""
+    d = distribuicao_acertos(k, loteria)
+    linha = next((l for l in d["linhas"] if l["acertos"] == acertos), None)
+    esperado, desvio = d["esperado"], d["desvio"]
+    diff = acertos - esperado
+    if desvio and diff > desvio:
+        nivel, veredito = "acima", "acima do esperado"
+    elif desvio and diff < -desvio:
+        nivel, veredito = "abaixo", "abaixo do esperado"
+    else:
+        nivel, veredito = "tipico", "dentro do esperado"
+    return {
+        "dezenas": k,
+        "acertos": acertos,
+        "esperado": esperado,
+        "desvio": desvio,
+        "diferenca": round(diff, 4),
+        "nivel": nivel,
+        "veredito": veredito,
+        "faixa_tipica": [
+            max(0, round(esperado - desvio, 1)),
+            round(esperado + desvio, 1),
+        ],
+        "pct_exato": linha["pct"] if linha else 0.0,
+        "pct_pior": round(100 * linha["p_menos"], 2) if linha else None,
+        "pct_melhor": round(100 * linha["p_mais"], 2) if linha else None,
+        "premiado": d["premiado"],
+        "menor_faixa_premiada": d["menor_faixa_premiada"],
     }
 
 

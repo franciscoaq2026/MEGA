@@ -232,11 +232,18 @@ def gerar(
     gerados. Só considera os jogos do MESMO pedido — nunca as apostas salvas
     pelo usuário.
 
-    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, 5 jogos:
+    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, 5 jogos
+    (12 conjuntos gerados por linha; desvio entre conjuntos entre parênteses):
 
-                      ganha algo   retorno médio   ganha em 2+ bilhetes
-        independente      44,65%         R$ 4,49                  7,98%
-        espalhado         47,35%         R$ 4,49                  5,45%
+                              ganha algo   retorno médio   em 2+ bilhetes
+        soltos (fórmula)          42,86%         R$ 4,49           9,02%
+        gerados sem espalhar   43,1% (2,1)       R$ 4,49     8,8% (1,3)
+        gerados espalhando     47,5% (0,6)       R$ 4,49     5,3% (0,6)
+
+    Repare na dispersão: sem espalhar, o resultado depende muito de quais
+    bilhetes saíram (38% a 46%); espalhando, a variação quase some. O retorno
+    médio é exato e igual nos três — é 5 x 25,67% x R$ 3,50, e a esperança da
+    soma não depende de correlação nenhuma.
 
     Ou seja: espalhar REDISTRIBUI, não aumenta. Ganha-se algo um pouco mais
     vezes e ganha-se em vários bilhetes um pouco menos vezes; o retorno médio
@@ -394,7 +401,7 @@ def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -
     faixas = {}
     for nome, f in base["faixas"].items():
         p = 1 - (1 - f["prob"]) ** n_jogos
-        faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
+        faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
     if espalhar and n_jogos > 1:
         qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg)
@@ -597,6 +604,17 @@ def fechamento_reduzido(dezenas: list[int], garantia: int, loteria: str = "mega"
     }
 
 
+def _um_em(p: float) -> int | None:
+    """Converte probabilidade em "1 em N", truncando como a Caixa publica.
+
+    O valor exato de 13 acertos na Lotofácil é 1 em 691,80. Arredondando dá
+    692; a Caixa publica 691, e é com o site dela (e com o bilhete impresso)
+    que o usuário compara. A diferença entre as duas convenções é de 0,2% na
+    probabilidade — imperceptível —, mas ver um número diferente do oficial
+    faz o app parecer errado. Então seguimos a convenção oficial."""
+    return int(1 / p) if p else None
+
+
 def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> dict:
     """Probabilidades exatas (hipergeométrica) para um jogo de k dezenas.
 
@@ -616,7 +634,7 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
             continue
         favoraveis = comb(sorteadas, acertos) * comb(total - sorteadas, k - acertos)
         p = favoraveis / denom
-        faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
+        faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     combos = comb(k, escolher)
     qualquer = sum(f["prob"] for f in faixas.values())
     return {
@@ -694,7 +712,7 @@ def distribuicao_acertos(k: int, loteria: str = "mega") -> dict:
         "premiado": {
             "prob": premiado,
             "pct": round(100 * premiado, 4),
-            "one_in": round(1 / premiado) if premiado else None,
+            "one_in": _um_em(premiado),
         },
         "linhas": linhas,
     }

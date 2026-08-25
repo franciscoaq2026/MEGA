@@ -102,15 +102,50 @@ export default function GerarJogos() {
 
   // Chance acumulada de N bilhetes simples separados — a conta que interessa
   // a quem joga simples, e a base da comparação com a aposta múltipla.
-  // Depende de `espalharAtivo`: espalhar muda a chance de levar ALGUM prêmio,
-  // então o painel tem de reagir ao checkbox (antes ficava parado no valor de
-  // bilhetes soltos, mesmo com a opção ligada).
+  //
+  // Buscamos SEMPRE com espalhar=true porque a resposta traz os dois valores
+  // de uma vez: `qualquer` (espalhado) e `qualquer_solto` (bilhetes soltos).
+  // Assim o painel e a explicação do checkbox leem da MESMA fonte — antes a
+  // explicação trazia números fixos, medidos à parte, que contradiziam o
+  // painel logo abaixo (dizia 44,7% onde o painel mostrava 42,86%), e citava
+  // números da Lotofácil mesmo na tela da Mega.
   const espalharAtivo = simples && espalhar && qtdJogos > 1
   useEffect(() => {
-    apiGet(`/odds/carteira?jogos=${qtdJogos}&espalhar=${espalharAtivo}`)
+    apiGet(`/odds/carteira?jogos=${qtdJogos}&espalhar=true`)
       .then(setCarteira)
       .catch(() => setCarteira(null))
-  }, [qtdJogos, espalharAtivo])
+  }, [qtdJogos])
+
+  // O que o painel mostra depende do checkbox; os dois números saem da mesma
+  // resposta, então painel e explicação são sempre coerentes entre si.
+  const chanceAlgo = carteira && (espalharAtivo ? carteira.qualquer : carteira.qualquer_solto)
+  // Onde os bilhetes já quase não se tocam (o caso da Mega: 6 dezenas em 60),
+  // espalhar não tem o que redistribuir e os dois valores coincidem. Dizer
+  // "vai de 0,22% para 0,22%" é verdade, mas lê como defeito — então o texto
+  // reconhece o empate em vez de fingir que houve ganho.
+  const mesmaChance =
+    carteira && fmt(carteira.qualquer_solto.pct) === fmt(carteira.qualquer.pct)
+  const ajudaEspalhar = !carteira
+    ? 'Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Você leva algum ' +
+      'prêmio um pouco mais vezes, e menos vezes em dois bilhetes de uma vez. O retorno médio é ' +
+      'idêntico nos dois casos, e a chance do prêmio principal não muda. É preferência de ' +
+      'formato, não vantagem.'
+    : mesmaChance
+      ? `Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Na ${cfg.nome} ` +
+        `isso quase não muda nada: com ${qtdJogos} bilhetes de ${cfg.escolher} dezenas em ` +
+        `${cfg.total}, eles já saem praticamente sem se tocar, então a chance de levar algum ` +
+        `prêmio fica em ${fmt(carteira.qualquer.pct)}% dos dois jeitos — e já é o máximo ` +
+        `possível. Espalhar rende de verdade onde os bilhetes são obrigados a se sobrepor, ` +
+        `como na Lotofácil (15 dezenas em 25). O retorno médio e a chance do prêmio principal ` +
+        `não mudam em nenhum caso.`
+      : `Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Com ${qtdJogos} ` +
+        `bilhetes na ${cfg.nome}, a chance de levar algum prêmio vai de ` +
+        `${fmt(carteira.qualquer_solto.pct)}% (bilhetes soltos) para ${fmt(carteira.qualquer.pct)}% — ` +
+        `são os mesmos números do painel ao lado. Em compensação, cai a chance de levar em dois ` +
+        `bilhetes ao mesmo tempo: o RETORNO MÉDIO é idêntico nos dois casos, porque os dois ` +
+        `efeitos se cancelam. E a chance do prêmio principal não muda: são ${qtdJogos} bilhetes ` +
+        `entre as mesmas combinações possíveis de qualquer jeito. É preferência de formato, ` +
+        `não vantagem.`
 
   function salvar(i, jogo) {
     if (!concursoSalvar) return
@@ -298,7 +333,7 @@ export default function GerarJogos() {
                 <span>
                   <span className="text-zinc-800 font-medium inline-flex items-center gap-1.5">
                     Espalhar os jogos
-                    <Help text="Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, com 5 jogos: a chance de levar algo vai de 44,7% para 47,4%, e a de ganhar em dois bilhetes ao mesmo tempo cai de 8,0% para 5,5%. O RETORNO MÉDIO é idêntico nos dois casos (R$ 4,49) — os efeitos se cancelam. E a chance do prêmio principal não muda: são N em 3.268.760 de qualquer jeito. É preferência de formato, não vantagem." />
+                    <Help text={ajudaEspalhar} />
                   </span>
                   <span className="block text-xs text-zinc-500">
                     Ganha algo com um pouco mais de frequência, e menos vezes em dois bilhetes de
@@ -377,15 +412,15 @@ export default function GerarJogos() {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                   <p className="text-xs text-emerald-900">
                     Chance de levar <strong>algum</strong> prêmio
-                    {carteira.espalhar ? ' (espalhando)' : ''}
+                    {espalharAtivo ? ' (espalhando)' : ''}
                   </p>
                   <p className="font-bold tabular-nums text-emerald-900">
-                    {fmt(carteira.qualquer.pct)}%{' '}
+                    {fmt(chanceAlgo.pct)}%{' '}
                     <span className="text-xs font-normal">
-                      (1 em {fmt(carteira.qualquer.one_in)})
+                      (1 em {fmt(chanceAlgo.one_in)})
                     </span>
                   </p>
-                  {carteira.espalhar ? (
+                  {espalharAtivo ? (
                     <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
                       {carteira.metodo === 'exato' ? (
                         <>

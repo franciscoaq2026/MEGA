@@ -263,17 +263,23 @@ def test_odds_lotofacil_bate_com_a_caixa():
         assert body["dezenas"] == 15
         assert body["combos_simples"] == 1
         assert body["custo_estimado"] == 3.50
+        # A tabela publicada pela Caixa para a aposta simples, na íntegra.
+        # Ela TRUNCA: 13 acertos é 1 em 691,80 e sai publicado como 691.
         assert body["faixas"]["15 acertos"]["one_in"] == 3_268_760
+        assert body["faixas"]["14 acertos"]["one_in"] == 21_791
+        assert body["faixas"]["13 acertos"]["one_in"] == 691
+        assert body["faixas"]["12 acertos"]["one_in"] == 59
         assert body["faixas"]["11 acertos"]["one_in"] == 11
 
         # 18 dezenas: C(18,15) = 816 apostas simples -> R$ 2.856,00
         r18 = c.get("/api/odds?loteria=lofa&dezenas=18").json()
         assert r18["combos_simples"] == 816
         assert r18["custo_estimado"] == 2856.00
-        # 1 em 4.006 — confere por dois caminhos independentes: a
-        # hipergeométrica direta e "816 apostas simples em 3.268.760".
-        assert r18["faixas"]["15 acertos"]["one_in"] == 4006
-        assert round(3_268_760 / 816) == 4006
+        # 1 em 4.005 — confere por dois caminhos independentes: a
+        # hipergeométrica direta e "816 apostas simples em 3.268.760",
+        # truncando como na aposta simples (o valor exato é 4.005,83).
+        assert r18["faixas"]["15 acertos"]["one_in"] == 4005
+        assert int(3_268_760 / 816) == 4005
 
         # a Mega segue com os números dela
         rm = c.get("/api/odds?loteria=mega").json()
@@ -420,7 +426,7 @@ def test_odds_carteira_apostas_separadas():
         dez = c.get("/api/odds/carteira?loteria=lofa&jogos=16").json()
         assert dez["custo_estimado"] == 56.00
         # 16 bilhetes -> 16x a chance do prêmio principal
-        assert dez["faixas"]["15 acertos"]["one_in"] == round(3_268_760 / 16)
+        assert dez["faixas"]["15 acertos"]["one_in"] == int(3_268_760 / 16)
         # ...e MUITO mais chance de levar algo do que 1 aposta de 16 dezenas
         multipla = next(
             l for l in c.get("/api/odds/table?loteria=lofa").json()["linhas"]
@@ -459,7 +465,7 @@ def test_espalhar_reduz_sobreposicao_sem_mudar_a_chance():
     for n in (1, 5, 16):
         assert (
             generator.odds_carteira(n, "lofa")["faixas"]["15 acertos"]["one_in"]
-            == round(3_268_760 / n)
+            == int(3_268_760 / n)
         )
 
 

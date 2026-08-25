@@ -77,12 +77,21 @@ def test_odds_valores_conhecidos():
 
     o15 = generator.odds(15)
     assert o15["combos_simples"] == 5005
-    assert o15["faixas"]["sena"]["one_in"] == round(1 / (5005 / 50063860))
+    # "1 em N" trunca (convenção da Caixa): 50.063.860/5.005 = 10.002,77
+    assert o15["faixas"]["sena"]["one_in"] == int(50063860 / 5005) == 10002
 
-    # 20 dezenas (máximo atual da Caixa): caso do bolão da Aldeota no 3010
+    # 20 dezenas (máximo atual da Caixa): caso do bolão da Aldeota no 3010.
+    #
+    # Aqui as duas fontes oficiais divergem entre si, e não há convenção que
+    # satisfaça as duas: o valor exato é 1.291,63, e a Mega costuma ser
+    # divulgada como "1 em 1.292" (arredondando), enquanto a tabela da
+    # Lotofácil publica 691 para 691,80 (truncando). O app trunca em toda
+    # parte, porque a linha que o usuário de fato confere é a aposta simples
+    # da Lotofácil — impressa no bilhete dele — e não esta, de R$ 232.560.
+    # Não "conserte" isto para 1292 sem trocar a convenção em `_um_em`.
     o20 = generator.odds(20)
     assert o20["combos_simples"] == 38760
-    assert o20["faixas"]["sena"]["one_in"] == 1292
+    assert o20["faixas"]["sena"]["one_in"] == 1291
 
 
 def test_distribuicao_acertos_lotofacil():

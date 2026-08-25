@@ -72,7 +72,9 @@ O slug da loteria (`megasena`, `lotofacil`) entra na URL das três fontes:
    que não sejam residenciais. Cobre as duas modalidades.
 4. **Plano C — importar CSV** (botão na tela Sorteios): arquivo com colunas
    `concurso, data, dezena1..dezenaN`, separado por `,` ou `;`, com ou sem
-   cabeçalho, datas em `dd/mm/aaaa` ou `aaaa-mm-dd`.
+   cabeçalho, datas em `dd/mm/aaaa` ou `aaaa-mm-dd`. `N` é o que a loteria
+   aberta sorteia (6 na Mega, 15 na Lotofácil) e o arquivo é validado contra
+   ela — um CSV da outra modalidade é recusado, não importado pela metade.
 
 Tudo fica em cache no SQLite (`backend/data/megasena.db`), então o app segue
 funcionando se as APIs caírem. Cada loteria tem um histórico embutido

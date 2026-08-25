@@ -104,7 +104,9 @@ async def main() -> None:
 
         if len(codes) > 1:
             sys.exit("Com CSV, informe a loteria: python seed_turso.py --loteria mega arquivo.csv")
-        rows, errors = parse_draws_csv(open(csv_path, encoding="utf-8-sig").read())
+        rows, errors = parse_draws_csv(
+            open(csv_path, encoding="utf-8-sig").read(), codes[0]
+        )
         db.upsert_draws(rows, codes[0])
         print(f"Importados {len(rows)} sorteios do CSV ({len(errors)} ignorados).")
         return

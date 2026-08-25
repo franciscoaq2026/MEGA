@@ -11,6 +11,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db, lotteries  # noqa: E402
+from app.csv_utils import parse_draws_csv  # noqa: E402
 from app.main import app  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 
@@ -625,3 +626,68 @@ def test_validacao_dezenas_por_loteria():
         # Mega com 61 (fora do intervalo)
         r = c.post("/api/bets", json={"loteria": "mega", "concurso": 1, "origem": "manual", "dezenas": [1, 2, 3, 4, 5, 61]}, headers=h)
         assert r.status_code == 422
+
+
+# ---- CSV: o parser precisa ser o da loteria de destino ----
+
+
+LOFA_CSV = (
+    "concurso,data,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15\n"
+    "4000,01/08/2026,1,2,3,5,7,9,10,11,13,15,17,19,21,23,25\n"
+)
+MEGA_CSV = "concurso;data;d1;d2;d3;d4;d5;d6\n1;11/03/1996;4;5;30;33;41;52\n"
+
+
+def test_csv_da_lotofacil_entra_completo():
+    rows, errors = parse_draws_csv(LOFA_CSV, "lofa")
+    assert errors == []
+    assert rows[0]["dezenas"] == [1, 2, 3, 5, 7, 9, 10, 11, 13, 15, 17, 19, 21, 23, 25]
+
+
+def test_csv_de_uma_loteria_nao_entra_truncado_na_outra():
+    """Antes, um CSV da Lotofácil importado como Mega virava um sorteio de 6
+    dezenas (as 6 primeiras de 15), sem erro nenhum — corrompendo a base."""
+    rows, errors = parse_draws_csv(LOFA_CSV, "mega")
+    assert rows == []
+    assert len(errors) == 1
+
+    rows, errors = parse_draws_csv(MEGA_CSV, "lofa")
+    assert rows == []
+    assert len(errors) == 1
+
+
+def test_import_csv_respeita_a_loteria_da_query():
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/import-csv?loteria=lofa",
+            files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+        )
+        assert r.status_code == 200
+        assert r.json()["imported"] == 1
+        assert len(c.get("/api/draws/4000?loteria=lofa").json()["dezenas"]) == 15
+
+        # o mesmo arquivo enviado para a Mega é recusado, não truncado
+        r = c.post(
+            "/api/import-csv?loteria=mega",
+            files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+        )
+        assert r.status_code == 400
+
+
+def test_csv_da_caixa_com_colunas_extras_continua_entrando():
+    """A planilha oficial traz ganhadores/rateio depois das dezenas — o guard
+    de cabeçalho não pode recusar esse arquivo."""
+    caixa = (
+        "Concurso;Data Sorteio;Bola1;Bola2;Bola3;Bola4;Bola5;Bola6;"
+        "Ganhadores 6 acertos;Rateio 6 acertos\n"
+        "1;11/03/1996;4;5;30;33;41;52;0;0,00\n"
+    )
+    rows, errors = parse_draws_csv(caixa, "mega")
+    assert errors == []
+    assert rows[0]["dezenas"] == [4, 5, 30, 33, 41, 52]
+
+
+def test_csv_sem_cabecalho_continua_aceito():
+    rows, errors = parse_draws_csv("1;11/03/1996;4;5;30;33;41;52\n", "mega")
+    assert errors == []
+    assert rows[0]["concurso"] == 1

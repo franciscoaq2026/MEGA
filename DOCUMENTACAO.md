@@ -169,9 +169,15 @@ progresso — isso respeita o `maxDuration` da função serverless):
 
 ### 3.5 Plano C — CSV manual (`POST /api/import-csv`)
 
-Aceita `concurso, data, dezena1..dezena6` (separador `,` ou `;`, com/sem
+Aceita `concurso, data, dezena1..dezenaN` (separador `,` ou `;`, com/sem
 cabeçalho, datas `dd/mm/aaaa` ou ISO; linhas inválidas são reportadas e
-puladas).
+puladas). `N` é o número de dezenas que a loteria de destino sorteia — 6 na
+Mega, 15 na Lotofácil — e o arquivo é validado contra ela: linhas curtas ou
+com dezenas fora do volante são recusadas, e um cabeçalho que descreva outra
+quantidade de dezenas rejeita o arquivo inteiro antes de importar qualquer
+linha. Colunas extras depois das dezenas (ganhadores, rateio, cidade…) são
+ignoradas, para a planilha oficial da Caixa continuar entrando. O upload é
+limitado a 4 MB.
 
 ### 3.6 Banco de dados dual (db.py)
 

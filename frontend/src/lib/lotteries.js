@@ -14,6 +14,11 @@ export const LOTERIAS = {
     cols: 10,
     preco: 6.0,
     fonte: 'megasena',
+    // Limites do fechamento (espelham max_roda_completa/max_reduzida do
+    // backend). Sem eles a tela deixava marcar 20 dezenas e só descobria o
+    // teto no erro 400 que voltava do servidor.
+    maxRodaCompleta: 11,
+    maxReduzida: 15,
     badge: '60',
     blurb: '6 dezenas de 60',
     chance: '1 em 50.063.860 (sena)',
@@ -45,6 +50,8 @@ export const LOTERIAS = {
     cols: 5,
     preco: 3.5,
     fonte: 'lotofacil',
+    maxRodaCompleta: 17,
+    maxReduzida: 18,
     badge: '25',
     blurb: '15 dezenas de 25',
     chance: '1 em 3.268.760 (15 acertos)',

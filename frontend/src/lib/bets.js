@@ -4,6 +4,24 @@
 // migração dos jogos que já estavam no navegador acontece no primeiro sync.
 
 import { authHeaders, getSession } from './auth.js'
+import { getLoteria } from './lotteries.js'
+
+// Um jogo só é válido no formato da loteria a que pertence. Vale para o
+// backup importado e para o que já está no navegador: o backend recusa o
+// LOTE INTEIRO se uma aposta vier fora do formato (422), então uma única
+// entrada estragada — um backup da Mega importado dentro da Lotofácil, por
+// exemplo — desligava a sincronização em nuvem para sempre, em silêncio.
+export function betValida(bet, loteria) {
+  const cfg = getLoteria(loteria)
+  if (!bet || typeof bet !== 'object') return false
+  if (!Number.isInteger(Number(bet.concurso)) || Number(bet.concurso) < 1) return false
+  if (bet.origem !== 'manual' && bet.origem !== 'app') return false
+  const dz = bet.dezenas
+  if (!Array.isArray(dz)) return false
+  if (dz.length < cfg.escolher || dz.length > cfg.maxEscolher) return false
+  if (new Set(dz).size !== dz.length) return false
+  return dz.every((n) => Number.isInteger(n) && n >= cfg.min && n <= cfg.max)
+}
 
 // Chave por loteria. A Mega mantém a chave histórica para não perder dados
 // de quem já usava o app antes do hub.
@@ -70,7 +88,9 @@ async function cloudDelete(id) {
 // Envia as apostas locais desta loteria e recebe a lista da conta para ela.
 export async function syncBets(loteria = 'mega') {
   if (!getSession()) return loadBets(loteria)
-  const local = loadBets(loteria)
+  // Só sobem as apostas no formato da loteria: uma entrada inválida faria o
+  // servidor recusar o lote inteiro, e nada sincronizaria.
+  const local = loadBets(loteria).filter((b) => betValida(b, loteria))
   const res = await fetch(`/api/bets/sync?loteria=${encodeURIComponent(loteria)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -85,10 +105,17 @@ export async function syncBets(loteria = 'mega') {
 
 // ── API local (síncrona) + espelho na nuvem ───────────────────────────────────
 
+// crypto.randomUUID() só existe em contexto seguro (https ou localhost);
+// acessando o app pelo IP da rede local ele não existe e o "salvar" quebrava.
+function novoId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID()
+  return `bet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, dezenas }) {
   const bets = loadBets(loteria)
   const bet = {
-    id: crypto.randomUUID(),
+    id: novoId(),
     loteria,
     concurso: Number(concurso),
     origem, // 'manual' | 'app'
@@ -121,17 +148,17 @@ export async function importBets(file, loteria = 'mega') {
   const text = await file.text()
   const data = JSON.parse(text)
   if (!Array.isArray(data)) throw new Error('arquivo inválido: esperado um array de jogos')
-  const valid = data.filter(
-    (b) =>
-      b &&
-      typeof b.concurso === 'number' &&
-      (b.origem === 'manual' || b.origem === 'app') &&
-      Array.isArray(b.dezenas) &&
-      b.dezenas.length >= 6,
-  )
+  // Antes bastava ter 6 dezenas — o que deixava um backup da Mega entrar na
+  // Lotofácil (6 dezenas onde a aposta mínima é 15) e envenenar o sync.
+  const valid = data.filter((b) => betValida(b, loteria))
   const existing = loadBets(loteria)
   const ids = new Set(existing.map((b) => b.id))
-  const merged = [...existing, ...valid.filter((b) => !ids.has(b.id)).map((b) => ({ ...b, loteria }))]
+  // Jogo sem id ganha um: sem isso, vários deles colidiriam em `undefined` e
+  // só o primeiro entraria (e nenhum subiria para a nuvem).
+  const novos = valid
+    .map((b) => ({ ...b, id: b.id || novoId(), loteria }))
+    .filter((b) => !ids.has(b.id))
+  const merged = [...existing, ...novos]
   saveBets(loteria, merged)
   if (getSession()) {
     try {

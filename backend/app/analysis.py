@@ -41,7 +41,7 @@ def _cfg(loteria) -> dict:
 def moldura_set(cfg: dict) -> set[int]:
     """Dezenas na borda do volante (primeira/última linha ou coluna).
 
-    Mega: grade 6x10 → 26 dezenas na moldura. Lotofácil: 5x5 → 16."""
+    Mega: grade 6x10 → 28 dezenas na moldura. Lotofácil: 5x5 → 16."""
     cols = cfg["cols"]
     lin = lotteries.linhas(cfg)
     base = cfg["min_num"]

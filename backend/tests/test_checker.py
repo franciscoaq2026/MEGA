@@ -1,4 +1,5 @@
 import random
+import zlib
 
 import pytest
 
@@ -54,3 +55,15 @@ def test_backtest_reprodutivel_e_proximo_do_acaso():
 def test_backtest_historico_insuficiente():
     with pytest.raises(ValueError):
         checker.backtest(DRAWS[:20], ultimos=100)
+
+
+def test_backtest_semente_nao_depende_do_hash_do_processo():
+    """A semente precisa ser estável entre processos.
+
+    Antes ela usava `hash(nome)`, que o Python aleatoriza por processo
+    (PYTHONHASHSEED): o mesmo backtest devolvia números diferentes a cada
+    reinício do servidor, apesar do docstring prometer reprodutibilidade."""
+    assert checker._semente(1000, "aleatorio") == checker._semente(1000, "aleatorio")
+    assert checker._semente(1000, "aleatorio") != checker._semente(1000, "balanceado")
+    # valor fixo: se a fórmula mudar, o backtest publicado muda junto
+    assert checker._semente(2500, "aleatorio") == 2500 * 1000 + zlib.crc32(b"aleatorio") % 1000

@@ -14,11 +14,9 @@ from statistics import pstdev
 
 from . import lotteries
 
+# Pool padrão (Mega) para quem chama sem passar `numbers`. Toda função aqui
+# aceita o pool da loteria; os routers sempre passam o correto.
 NUMBERS = range(1, 61)
-
-# Valores teóricos de referência (jogo de 6 dezenas em 60)
-TOTAL_COMBOS = comb(60, 6)  # 50.063.860
-THEORETICAL_SUM_MEAN = 183.0  # 6 * média(1..60) = 6 * 30,5
 
 
 def _window(draws: list[dict], window: int) -> list[dict]:

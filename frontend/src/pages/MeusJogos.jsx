@@ -185,7 +185,12 @@ export default function MeusJogos() {
     if (!file) return
     try {
       const r = await importBets(file, code)
-      setMessage({ type: 'ok', text: `Backup importado: ${r.importados} jogo(s).` })
+      setMessage({
+        type: 'ok',
+        text: r.ignorados
+          ? `Backup importado: ${r.importados} jogo(s). ${r.ignorados} ignorado(s) por não estarem no formato da ${cfg.nome} (${cfg.escolher} a ${cfg.maxEscolher} dezenas de ${cfg.min} a ${cfg.max}).`
+          : `Backup importado: ${r.importados} jogo(s).`,
+      })
       refresh()
     } catch (e) {
       setMessage({ type: 'error', text: `Falha ao importar: ${e.message}` })
@@ -529,7 +534,7 @@ export default function MeusJogos() {
         <Card>
           <p className="text-sm text-zinc-500">
             Nenhum jogo salvo ainda. Adicione seu jogo manual acima e gere o jogo do app em{' '}
-            <Link to="/gerar" className="text-emerald-700 underline">
+            <Link to={`/${code}/gerar`} className="text-emerald-700 underline">
               Gerar jogos
             </Link>
             .

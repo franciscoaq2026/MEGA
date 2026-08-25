@@ -550,15 +550,27 @@ def fechamento_reduzido(dezenas: list[int], garantia: int, loteria: str = "mega"
     escolher = cfg["escolher"]
     ds = sorted(dezenas)
     k = len(ds)
-    combos = [frozenset(c) for c in combinations(ds, escolher)]
-    # alvos == candidatos (todos os subconjuntos de tamanho `escolher`)
-    # cobertura de cada candidato como bitmask sobre os índices dos alvos
+    combos = [tuple(c) for c in combinations(ds, escolher)]
+    indice = {c: i for i, c in enumerate(combos)}
+    # alvos == candidatos (todos os subconjuntos de tamanho `escolher`).
+    # Cobertura de cada candidato como bitmask sobre os índices dos alvos.
+    #
+    # Em vez de testar o candidato contra TODOS os alvos (O(n²) interseções —
+    # 25 milhões numa Mega de 15 dezenas, ~6 s), enumeramos direto os alvos que
+    # ele cobre: escolher j dezenas dentro do candidato e escolher-j fora dele.
+    # São C(escolher,j)·C(k-escolher,escolher-j) alvos, somados de `garantia`
+    # até `escolher` — 55 em vez de 5.005 no mesmo caso. O bitmask final é
+    # idêntico, então o fechamento gerado é exatamente o mesmo de antes.
     cov = []
     for ap in combos:
+        fora = tuple(n for n in ds if n not in ap)
         mask = 0
-        for j, alvo in enumerate(combos):
-            if len(ap & alvo) >= garantia:
-                mask |= 1 << j
+        for j in range(garantia, escolher + 1):
+            if escolher - j > len(fora):
+                continue
+            for dentro in combinations(ap, j):
+                for extra in combinations(fora, escolher - j):
+                    mask |= 1 << indice[tuple(sorted(dentro + extra))]
         cov.append(mask)
 
     alvo_total = (1 << len(combos)) - 1
@@ -581,7 +593,7 @@ def fechamento_reduzido(dezenas: list[int], garantia: int, loteria: str = "mega"
         "garantia_faixa": cfg["faixas"].get(garantia, f"{garantia} acertos"),
         "garantia_verificada": garantido,
         "num_jogos_roda_completa": comb(k, escolher),
-        "jogos": [sorted(combos[i]) for i in escolhidas],
+        "jogos": [list(combos[i]) for i in escolhidas],
     }
 
 

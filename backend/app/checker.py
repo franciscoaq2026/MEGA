@@ -1,6 +1,7 @@
 """Conferência de apostas contra resultados e backtest de estratégias."""
 
 import random
+from zlib import crc32
 
 from . import db, generator, lotteries
 
@@ -53,13 +54,23 @@ def conferir_apostas(apostas: list[dict], loteria: str = "mega") -> list[dict]:
     return out
 
 
+def _semente(concurso: int, estrategia: str) -> int:
+    """Semente estável do backtest: mesma entrada, mesmo número, sempre."""
+    return concurso * 1000 + crc32(estrategia.encode("utf-8")) % 1000
+
+
 def backtest(
     draws: list[dict], ultimos: int = 100, min_historico: int = 50, loteria: str = "mega"
 ) -> dict:
     """Simula jogar cada estratégia (1 aposta simples por concurso) nos
     últimos N concursos, usando SOMENTE o histórico anterior a cada sorteio.
 
-    O rng é semeado pelo número do concurso, então o resultado é reprodutível.
+    O rng é semeado pelo número do concurso e pelo nome da estratégia, então o
+    resultado é reprodutível — inclusive entre execuções diferentes. A semente
+    usa crc32 do nome, e não `hash()`: o hash de str em Python é aleatorizado a
+    cada processo (PYTHONHASHSEED), o que fazia o mesmo backtest devolver
+    números distintos a cada reinício do servidor.
+
     Esperado pelo acaso = escolher × sorteadas / total, igual para qualquer
     estratégia: 0,6 acerto na Mega (6·6/60) e 9,0 na Lotofácil (15·15/25).
     """
@@ -84,7 +95,7 @@ def backtest(
         prior = draws[:i]
         sorteadas = set(alvo_draw["dezenas"])
         for nome, fn in generator.GERADORES.items():
-            rng = random.Random(alvo_draw["concurso"] * 1000 + hash(nome) % 1000)
+            rng = random.Random(_semente(alvo_draw["concurso"], nome))
             jogo = fn(rng, prior, escolher, pool)
             acertos = len(set(jogo) & sorteadas)
             resultados[nome]["acertos_total"] += acertos

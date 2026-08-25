@@ -205,7 +205,11 @@ function GeradorAvancado({ ranges }) {
       }
       for (const [k] of FILTROS) {
         const f = filtros[k]
-        if (f?.enabled) payload.filtros[k] = { min: Number(f.min), max: Number(f.max) }
+        if (!f?.enabled) continue
+        // Campo vazio = lado aberto da faixa. Antes virava Number('') === 0, o
+        // que zerava o máximo e fazia nenhum jogo passar no filtro.
+        const lado = (v) => (v === '' || v == null ? null : Number(v))
+        payload.filtros[k] = { min: lado(f.min), max: lado(f.max) }
       }
       if (usaConsecutivos) payload.filtros.consecutivos_max = Number(consecMax)
       setResult(await apiPost('/generate-advanced', payload))
@@ -384,6 +388,9 @@ function Fechamento() {
   const minDezenas = cfg.escolher + 1
   const [dezenas, setDezenas] = useState([])
   const [tipo, setTipo] = useState('reduzida')
+  // Teto por tipo: a roda completa explode em número de jogos muito antes do
+  // reduzido, e os dois param bem abaixo das 20 dezenas que a Caixa aceita.
+  const maxDezenas = tipo === 'completa' ? cfg.maxRodaCompleta : cfg.maxReduzida
   const [garantia, setGarantia] = useState(garantias[garantias.length - 1])
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -406,10 +413,12 @@ function Fechamento() {
     <div className="space-y-4">
       <Card
         title="Fechamento / desdobramento"
-        subtitle={`Escolha de ${minDezenas} a ${cfg.maxEscolher} dezenas. O app monta um conjunto de jogos com garantia matemática — e verifica a garantia antes de mostrar.`}
+        subtitle={`Escolha de ${minDezenas} a ${maxDezenas} dezenas. O app monta um conjunto de jogos com garantia matemática — e verifica a garantia antes de mostrar.`}
       >
-        <Volante selected={dezenas} onChange={setDezenas} max={cfg.maxEscolher} />
-        <p className="text-xs text-zinc-500 mt-2">{dezenas.length} dezenas selecionadas</p>
+        <Volante selected={dezenas} onChange={setDezenas} max={maxDezenas} />
+        <p className="text-xs text-zinc-500 mt-2">
+          {dezenas.length} de até {maxDezenas} dezenas selecionadas
+        </p>
 
         <div className="grid sm:grid-cols-2 gap-3 mt-3">
           <label className="text-sm">
@@ -419,7 +428,12 @@ function Fechamento() {
             </span>
             <select
               value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
+              onChange={(e) => {
+                const novo = e.target.value
+                setTipo(novo)
+                const teto = novo === 'completa' ? cfg.maxRodaCompleta : cfg.maxReduzida
+                if (dezenas.length > teto) setDezenas(dezenas.slice(0, teto))
+              }}
               className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5 bg-white"
             >
               <option value="reduzida">Reduzido (menos jogos, garantia menor)</option>
@@ -620,7 +634,7 @@ export default function Fabrica() {
   const conteudo = useMemo(() => {
     if (tab === 'gerador') return <GeradorAvancado ranges={ranges} />
     if (tab === 'fechamento') return <Fechamento />
-    return <Termometro ranges={ranges} />
+    return <Termometro />
   }, [tab, ranges])
 
   if (empty) {

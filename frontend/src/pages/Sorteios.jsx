@@ -123,11 +123,20 @@ export default function Sorteios() {
     let added = 0
     try {
       // Fase 1 — servidor: seed embutido + espelhos (rápido, cobre o histórico)
-      for (;;) {
+      // O laço para em três situações: acabou (remaining 0), o lote não gravou
+      // nada (added 0 — sem progresso, repetir só repetiria o mesmo pedido, e
+      // antes isso era um laço infinito batendo no servidor) ou o teto de
+      // rodadas, que é folga sobre o maior histórico (3.657 ÷ 200 = 19 lotes).
+      let travou = false
+      for (let volta = 0; volta < 60; volta++) {
         const r = await apiPost('/sync')
         added += r.added
         setSync({ added, remaining: r.remaining, fase: 'servidor' })
         if (r.remaining <= 0) break
+        if (r.added === 0) {
+          travou = true
+          break
+        }
       }
 
       // Fase 2 — navegador: busca na Caixa (pelo SEU IP, que não é bloqueado)
@@ -147,20 +156,26 @@ export default function Sorteios() {
       }
 
       const totalNovo = added + (direto?.enviados ?? 0)
+      let texto
       if (direto) {
-        setMessage({
-          type: 'ok',
-          text:
-            direto.enviados > 0
-              ? `Sincronizado: ${totalNovo} concurso(s) novo(s) — ${direto.enviados} vindo(s) da ${direto.fonte} direto pelo seu navegador. Tudo atualizado até o concurso ${direto.atualRemoto}.`
-              : `Sincronizado: ${totalNovo} concurso(s) novo(s). Você já está no concurso mais recente (${direto.atualRemoto}).`,
-        })
+        texto =
+          direto.enviados > 0
+            ? `Sincronizado: ${totalNovo} concurso(s) novo(s) — ${direto.enviados} vindo(s) da ${direto.fonte} direto pelo seu navegador. Tudo atualizado até o concurso ${direto.atualRemoto}.`
+            : `Sincronizado: ${totalNovo} concurso(s) novo(s). Você já está no concurso mais recente (${direto.atualRemoto}).`
       } else {
-        setMessage({
-          type: 'ok',
-          text: `Sincronizado: ${totalNovo} concurso(s) novo(s). Não consegui consultar a Caixa pelo navegador (rede/CORS) — os dados vão até o espelho mais recente disponível.`,
-        })
+        texto = `Sincronizado: ${totalNovo} concurso(s) novo(s). Não consegui consultar a Caixa pelo navegador (rede/CORS) — os dados vão até o espelho mais recente disponível.`
       }
+      // O laço do servidor parou sem gravar nada: ainda faltam concursos que
+      // nenhuma fonte entregou. Avisar é melhor do que ficar repetindo o mesmo
+      // pedido — e o CSV continua sendo a saída.
+      setMessage(
+        travou
+          ? {
+              type: 'error',
+              text: `${texto} Ainda faltam concursos que nenhuma fonte entregou — tente de novo mais tarde ou importe um CSV abaixo.`,
+            }
+          : { type: 'ok', text: texto },
+      )
       await reload()
     } catch (e) {
       setMessage({
@@ -255,7 +270,10 @@ export default function Sorteios() {
           </p>
           <p>
             2. Se as duas APIs estiverem fora do ar, <strong>Importar CSV</strong> aceita um
-            arquivo com colunas <code className="bg-zinc-100 px-1 rounded">concurso, data, dezena1..dezena6</code>{' '}
+            arquivo com colunas{' '}
+            <code className="bg-zinc-100 px-1 rounded">
+              concurso, data, dezena1..dezena{cfg.sorteadas}
+            </code>{' '}
             (separado por vírgula ou ponto e vírgula, com ou sem cabeçalho).
           </p>
         </div>

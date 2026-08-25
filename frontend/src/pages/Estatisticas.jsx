@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLottery } from '../lib/LotteryContext.jsx'
 import {
@@ -23,7 +23,14 @@ const EMERALD = '#059669'
 const BLUE = '#2563eb'
 const GRID = '#e4e4e7'
 const TICK = { fontSize: 11, fill: '#71717a' }
-const NUM_TICKS = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+// Marcas do eixo X: de 5 em 5 dentro do volante da loteria (a Lotofácil vai
+// só até 25, então a lista fixa de 1 a 60 da Mega não servia).
+function ticksDoVolante(cfg) {
+  const out = [cfg.min]
+  for (let n = Math.ceil(cfg.min / 5) * 5; n <= cfg.max; n += 5) if (n !== cfg.min) out.push(n)
+  if (out[out.length - 1] !== cfg.max) out.push(cfg.max)
+  return out
+}
 const WINDOWS = [
   { value: 0, label: 'Todos' },
   { value: 100, label: 'Últimos 100' },
@@ -70,6 +77,10 @@ function Heatmap({ freq }) {
 }
 
 function XRay({ defaultConcurso }) {
+  const { cfg } = useLottery()
+  // Acertos que o puro acaso entrega por jogo nesta loteria (0,6 na Mega; 9 na
+  // Lotofácil) — a referência honesta para julgar "quentes" e "atrasados".
+  const esperadoAcaso = (cfg.escolher * cfg.sorteadas) / cfg.total
   const [concurso, setConcurso] = useState(defaultConcurso)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -130,7 +141,7 @@ function XRay({ defaultConcurso }) {
           <p className="text-sm text-zinc-600">
             Concurso <strong>{result.concurso}</strong> · {formatDate(result.data)} · analisado
             contra {result.prior_draws} sorteios anteriores · soma {result.soma} ·{' '}
-            {result.pares} pares / {6 - result.pares} ímpares
+            {result.pares} pares / {result.dezenas.length - result.pares} ímpares
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {result.dezenas.map((d) => (
@@ -147,22 +158,27 @@ function XRay({ defaultConcurso }) {
           </div>
           <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 space-y-2 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-zinc-600 shrink-0">6 mais quentes na véspera:</span>
+              <span className="text-zinc-600 shrink-0">
+                {cfg.escolher} mais quentes na véspera:
+              </span>
               <BallRow dezenas={result.hot6} size="sm" highlightSet={new Set(result.dezenas.map((d) => d.n))} />
               <span className="font-semibold">
-                → acertaram {result.hot6_matches} de 6
+                → acertaram {result.hot6_matches} de {cfg.escolher}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-zinc-600 shrink-0">6 mais atrasados na véspera:</span>
+              <span className="text-zinc-600 shrink-0">
+                {cfg.escolher} mais atrasados na véspera:
+              </span>
               <BallRow dezenas={result.overdue6} size="sm" highlightSet={new Set(result.dezenas.map((d) => d.n))} />
               <span className="font-semibold">
-                → acertaram {result.overdue6_matches} de 6
+                → acertaram {result.overdue6_matches} de {cfg.escolher}
               </span>
             </div>
             <p className="text-xs text-zinc-500">
-              Para referência: qualquer jogo fixo de 6 dezenas acerta, em média, 0,6 dezena por
-              sorteio — “quentes” e “atrasados” não fazem melhor que isso no longo prazo.
+              Para referência: qualquer jogo fixo de {cfg.escolher} dezenas acerta, em média,{' '}
+              {formatNumber(esperadoAcaso, 1)} dezena por sorteio — “quentes” e “atrasados” não
+              fazem melhor que isso no longo prazo.
               (Dezenas em amarelo = coincidiram com o sorteio.)
             </p>
           </div>
@@ -174,6 +190,11 @@ function XRay({ defaultConcurso }) {
 
 export default function Estatisticas() {
   const { code, cfg } = useLottery()
+  const numTicks = useMemo(() => ticksDoVolante(cfg), [cfg])
+  // Atraso médio de um número: ele sai numa fração sorteadas/total dos
+  // concursos, então espera-se total/sorteadas - 1 concursos entre aparições
+  // (9 na Mega, 0,67 na Lotofácil — não dá para fixar o 9 da Mega nas duas).
+  const atrasoEsperado = cfg.total / cfg.sorteadas - 1
   const [empty, setEmpty] = useState(false)
   const [error, setError] = useState(null)
   const [windowSize, setWindowSize] = useState(0)
@@ -263,7 +284,7 @@ export default function Estatisticas() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={freq.freq} margin={{ top: 12, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke={GRID} />
-                  <XAxis dataKey="n" ticks={NUM_TICKS} interval={0} tick={TICK} tickLine={false} axisLine={{ stroke: GRID }} />
+                  <XAxis dataKey="n" ticks={numTicks} interval={0} tick={TICK} tickLine={false} axisLine={{ stroke: GRID }} />
                   <YAxis tick={TICK} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip
                     cursor={{ fill: 'rgba(0,0,0,0.05)' }}
@@ -320,14 +341,14 @@ export default function Estatisticas() {
       {delay && (
         <Card
           title="Atraso atual por número"
-          subtitle="Há quantos concursos cada número não é sorteado (0 = saiu no último) · linha tracejada: atraso esperado ≈ 9"
+          subtitle={`Há quantos concursos cada número não é sorteado (0 = saiu no último) · linha tracejada: atraso esperado ≈ ${formatNumber(atrasoEsperado, 1)}`}
         >
           <div className="overflow-x-auto">
             <div className="min-w-[720px] h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={delay.delays} margin={{ top: 12, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke={GRID} />
-                  <XAxis dataKey="n" ticks={NUM_TICKS} interval={0} tick={TICK} tickLine={false} axisLine={{ stroke: GRID }} />
+                  <XAxis dataKey="n" ticks={numTicks} interval={0} tick={TICK} tickLine={false} axisLine={{ stroke: GRID }} />
                   <YAxis tick={TICK} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip
                     cursor={{ fill: 'rgba(0,0,0,0.05)' }}
@@ -339,7 +360,7 @@ export default function Estatisticas() {
                       />
                     }
                   />
-                  <ReferenceLine y={9} stroke="#a1a1aa" strokeDasharray="4 4" />
+                  <ReferenceLine y={atrasoEsperado} stroke="#a1a1aa" strokeDasharray="4 4" />
                   <Bar dataKey="delay" fill={EMERALD} radius={[3, 3, 0, 0]} maxBarSize={10} />
                 </BarChart>
               </ResponsiveContainer>

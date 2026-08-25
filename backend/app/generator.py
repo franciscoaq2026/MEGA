@@ -232,11 +232,18 @@ def gerar(
     gerados. Só considera os jogos do MESMO pedido — nunca as apostas salvas
     pelo usuário.
 
-    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, 5 jogos:
+    Medido por enumeração exata dos 3.268.760 sorteios da Lotofácil, 5 jogos
+    (12 conjuntos gerados por linha; desvio entre conjuntos entre parênteses):
 
-                      ganha algo   retorno médio   ganha em 2+ bilhetes
-        independente      44,65%         R$ 4,49                  7,98%
-        espalhado         47,35%         R$ 4,49                  5,45%
+                              ganha algo   retorno médio   em 2+ bilhetes
+        soltos (fórmula)          42,86%         R$ 4,49           9,02%
+        gerados sem espalhar   43,1% (2,1)       R$ 4,49     8,8% (1,3)
+        gerados espalhando     47,5% (0,6)       R$ 4,49     5,3% (0,6)
+
+    Repare na dispersão: sem espalhar, o resultado depende muito de quais
+    bilhetes saíram (38% a 46%); espalhando, a variação quase some. O retorno
+    médio é exato e igual nos três — é 5 x 25,67% x R$ 3,50, e a esperança da
+    soma não depende de correlação nenhuma.
 
     Ou seja: espalhar REDISTRIBUI, não aumenta. Ganha-se algo um pouco mais
     vezes e ganha-se em vários bilhetes um pouco menos vezes; o retorno médio
@@ -394,7 +401,7 @@ def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -
     faixas = {}
     for nome, f in base["faixas"].items():
         p = 1 - (1 - f["prob"]) ** n_jogos
-        faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
+        faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
     if espalhar and n_jogos > 1:
         qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg)
@@ -550,15 +557,27 @@ def fechamento_reduzido(dezenas: list[int], garantia: int, loteria: str = "mega"
     escolher = cfg["escolher"]
     ds = sorted(dezenas)
     k = len(ds)
-    combos = [frozenset(c) for c in combinations(ds, escolher)]
-    # alvos == candidatos (todos os subconjuntos de tamanho `escolher`)
-    # cobertura de cada candidato como bitmask sobre os índices dos alvos
+    combos = [tuple(c) for c in combinations(ds, escolher)]
+    indice = {c: i for i, c in enumerate(combos)}
+    # alvos == candidatos (todos os subconjuntos de tamanho `escolher`).
+    # Cobertura de cada candidato como bitmask sobre os índices dos alvos.
+    #
+    # Em vez de testar o candidato contra TODOS os alvos (O(n²) interseções —
+    # 25 milhões numa Mega de 15 dezenas, ~6 s), enumeramos direto os alvos que
+    # ele cobre: escolher j dezenas dentro do candidato e escolher-j fora dele.
+    # São C(escolher,j)·C(k-escolher,escolher-j) alvos, somados de `garantia`
+    # até `escolher` — 55 em vez de 5.005 no mesmo caso. O bitmask final é
+    # idêntico, então o fechamento gerado é exatamente o mesmo de antes.
     cov = []
     for ap in combos:
+        fora = tuple(n for n in ds if n not in ap)
         mask = 0
-        for j, alvo in enumerate(combos):
-            if len(ap & alvo) >= garantia:
-                mask |= 1 << j
+        for j in range(garantia, escolher + 1):
+            if escolher - j > len(fora):
+                continue
+            for dentro in combinations(ap, j):
+                for extra in combinations(fora, escolher - j):
+                    mask |= 1 << indice[tuple(sorted(dentro + extra))]
         cov.append(mask)
 
     alvo_total = (1 << len(combos)) - 1
@@ -581,8 +600,19 @@ def fechamento_reduzido(dezenas: list[int], garantia: int, loteria: str = "mega"
         "garantia_faixa": cfg["faixas"].get(garantia, f"{garantia} acertos"),
         "garantia_verificada": garantido,
         "num_jogos_roda_completa": comb(k, escolher),
-        "jogos": [sorted(combos[i]) for i in escolhidas],
+        "jogos": [list(combos[i]) for i in escolhidas],
     }
+
+
+def _um_em(p: float) -> int | None:
+    """Converte probabilidade em "1 em N", truncando como a Caixa publica.
+
+    O valor exato de 13 acertos na Lotofácil é 1 em 691,80. Arredondando dá
+    692; a Caixa publica 691, e é com o site dela (e com o bilhete impresso)
+    que o usuário compara. A diferença entre as duas convenções é de 0,2% na
+    probabilidade — imperceptível —, mas ver um número diferente do oficial
+    faz o app parecer errado. Então seguimos a convenção oficial."""
+    return int(1 / p) if p else None
 
 
 def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> dict:
@@ -604,7 +634,7 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
             continue
         favoraveis = comb(sorteadas, acertos) * comb(total - sorteadas, k - acertos)
         p = favoraveis / denom
-        faixas[nome] = {"prob": p, "one_in": round(1 / p) if p else None}
+        faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     combos = comb(k, escolher)
     qualquer = sum(f["prob"] for f in faixas.values())
     return {
@@ -682,7 +712,7 @@ def distribuicao_acertos(k: int, loteria: str = "mega") -> dict:
         "premiado": {
             "prob": premiado,
             "pct": round(100 * premiado, 4),
-            "one_in": round(1 / premiado) if premiado else None,
+            "one_in": _um_em(premiado),
         },
         "linhas": linhas,
     }

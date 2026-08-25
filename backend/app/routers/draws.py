@@ -7,6 +7,10 @@ from ..fetcher import FetchError, fetch_latest, fetch_many, parse_payload
 
 router = APIRouter(tags=["sorteios"])
 
+# Teto do upload de CSV. O histórico completo da Lotofácil (3.657 linhas) tem
+# ~180 KB, então 4 MB é folgado — e evita ler um arquivo enorme na memória.
+MAX_CSV_BYTES = 4 * 1024 * 1024
+
 
 def _loteria(code: str | None) -> str:
     return lotteries.get_loteria(code)["code"]
@@ -203,14 +207,23 @@ def import_payloads(req: PayloadsImport, loteria: str | None = Query(default=Non
 
 @router.post("/import-csv")
 async def import_csv(file: UploadFile, loteria: str | None = Query(default=None)):
-    """Plano C: importa um CSV com colunas concurso, data, dezena1..dezenaN."""
+    """Plano C: importa um CSV com colunas concurso, data, dezena1..dezenaN.
+
+    O parser é o da loteria de destino: um CSV da Mega enviado para a Lotofácil
+    (ou o contrário) é recusado em vez de entrar truncado."""
     lot = _loteria(loteria)
     raw = await file.read()
+    if len(raw) > MAX_CSV_BYTES:
+        raise HTTPException(
+            413,
+            f"arquivo grande demais ({len(raw) // 1024} KB); o limite é "
+            f"{MAX_CSV_BYTES // 1024} KB",
+        )
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = raw.decode("latin-1")
-    rows, errors = parse_draws_csv(text)
+    rows, errors = parse_draws_csv(text, lot)
     if not rows:
         raise HTTPException(400, f"nenhuma linha válida no CSV ({errors[:3]})")
     db.upsert_draws(rows, lot)

@@ -11,6 +11,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db, lotteries  # noqa: E402
+from app.csv_utils import parse_draws_csv  # noqa: E402
 from app.main import app  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 
@@ -262,17 +263,23 @@ def test_odds_lotofacil_bate_com_a_caixa():
         assert body["dezenas"] == 15
         assert body["combos_simples"] == 1
         assert body["custo_estimado"] == 3.50
+        # A tabela publicada pela Caixa para a aposta simples, na íntegra.
+        # Ela TRUNCA: 13 acertos é 1 em 691,80 e sai publicado como 691.
         assert body["faixas"]["15 acertos"]["one_in"] == 3_268_760
+        assert body["faixas"]["14 acertos"]["one_in"] == 21_791
+        assert body["faixas"]["13 acertos"]["one_in"] == 691
+        assert body["faixas"]["12 acertos"]["one_in"] == 59
         assert body["faixas"]["11 acertos"]["one_in"] == 11
 
         # 18 dezenas: C(18,15) = 816 apostas simples -> R$ 2.856,00
         r18 = c.get("/api/odds?loteria=lofa&dezenas=18").json()
         assert r18["combos_simples"] == 816
         assert r18["custo_estimado"] == 2856.00
-        # 1 em 4.006 — confere por dois caminhos independentes: a
-        # hipergeométrica direta e "816 apostas simples em 3.268.760".
-        assert r18["faixas"]["15 acertos"]["one_in"] == 4006
-        assert round(3_268_760 / 816) == 4006
+        # 1 em 4.005 — confere por dois caminhos independentes: a
+        # hipergeométrica direta e "816 apostas simples em 3.268.760",
+        # truncando como na aposta simples (o valor exato é 4.005,83).
+        assert r18["faixas"]["15 acertos"]["one_in"] == 4005
+        assert int(3_268_760 / 816) == 4005
 
         # a Mega segue com os números dela
         rm = c.get("/api/odds?loteria=mega").json()
@@ -419,7 +426,7 @@ def test_odds_carteira_apostas_separadas():
         dez = c.get("/api/odds/carteira?loteria=lofa&jogos=16").json()
         assert dez["custo_estimado"] == 56.00
         # 16 bilhetes -> 16x a chance do prêmio principal
-        assert dez["faixas"]["15 acertos"]["one_in"] == round(3_268_760 / 16)
+        assert dez["faixas"]["15 acertos"]["one_in"] == int(3_268_760 / 16)
         # ...e MUITO mais chance de levar algo do que 1 aposta de 16 dezenas
         multipla = next(
             l for l in c.get("/api/odds/table?loteria=lofa").json()["linhas"]
@@ -458,7 +465,7 @@ def test_espalhar_reduz_sobreposicao_sem_mudar_a_chance():
     for n in (1, 5, 16):
         assert (
             generator.odds_carteira(n, "lofa")["faixas"]["15 acertos"]["one_in"]
-            == round(3_268_760 / n)
+            == int(3_268_760 / n)
         )
 
 
@@ -625,3 +632,68 @@ def test_validacao_dezenas_por_loteria():
         # Mega com 61 (fora do intervalo)
         r = c.post("/api/bets", json={"loteria": "mega", "concurso": 1, "origem": "manual", "dezenas": [1, 2, 3, 4, 5, 61]}, headers=h)
         assert r.status_code == 422
+
+
+# ---- CSV: o parser precisa ser o da loteria de destino ----
+
+
+LOFA_CSV = (
+    "concurso,data,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15\n"
+    "4000,01/08/2026,1,2,3,5,7,9,10,11,13,15,17,19,21,23,25\n"
+)
+MEGA_CSV = "concurso;data;d1;d2;d3;d4;d5;d6\n1;11/03/1996;4;5;30;33;41;52\n"
+
+
+def test_csv_da_lotofacil_entra_completo():
+    rows, errors = parse_draws_csv(LOFA_CSV, "lofa")
+    assert errors == []
+    assert rows[0]["dezenas"] == [1, 2, 3, 5, 7, 9, 10, 11, 13, 15, 17, 19, 21, 23, 25]
+
+
+def test_csv_de_uma_loteria_nao_entra_truncado_na_outra():
+    """Antes, um CSV da Lotofácil importado como Mega virava um sorteio de 6
+    dezenas (as 6 primeiras de 15), sem erro nenhum — corrompendo a base."""
+    rows, errors = parse_draws_csv(LOFA_CSV, "mega")
+    assert rows == []
+    assert len(errors) == 1
+
+    rows, errors = parse_draws_csv(MEGA_CSV, "lofa")
+    assert rows == []
+    assert len(errors) == 1
+
+
+def test_import_csv_respeita_a_loteria_da_query():
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/import-csv?loteria=lofa",
+            files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+        )
+        assert r.status_code == 200
+        assert r.json()["imported"] == 1
+        assert len(c.get("/api/draws/4000?loteria=lofa").json()["dezenas"]) == 15
+
+        # o mesmo arquivo enviado para a Mega é recusado, não truncado
+        r = c.post(
+            "/api/import-csv?loteria=mega",
+            files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+        )
+        assert r.status_code == 400
+
+
+def test_csv_da_caixa_com_colunas_extras_continua_entrando():
+    """A planilha oficial traz ganhadores/rateio depois das dezenas — o guard
+    de cabeçalho não pode recusar esse arquivo."""
+    caixa = (
+        "Concurso;Data Sorteio;Bola1;Bola2;Bola3;Bola4;Bola5;Bola6;"
+        "Ganhadores 6 acertos;Rateio 6 acertos\n"
+        "1;11/03/1996;4;5;30;33;41;52;0;0,00\n"
+    )
+    rows, errors = parse_draws_csv(caixa, "mega")
+    assert errors == []
+    assert rows[0]["dezenas"] == [4, 5, 30, 33, 41, 52]
+
+
+def test_csv_sem_cabecalho_continua_aceito():
+    rows, errors = parse_draws_csv("1;11/03/1996;4;5;30;33;41;52\n", "mega")
+    assert errors == []
+    assert rows[0]["concurso"] == 1

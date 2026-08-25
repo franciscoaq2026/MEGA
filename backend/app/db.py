@@ -17,12 +17,11 @@ import os
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-# Histórico embutido no repositório (dezenas de todos os concursos + datas
-# onde disponíveis). Serve de fonte para o /sync quando as APIs da Caixa/guidi
-# estão inacessíveis — o caso do Vercel, cujo IP de datacenter é bloqueado.
-SEED_JSON = DATA_DIR / "seed_megasena.json"  # mantido por compatibilidade
-# Seed por loteria (histórico embutido). Ambas trazem o histórico completo até
-# a data do último build; o que vier depois entra pelo /sync.
+# Histórico embutido no repositório por loteria (dezenas de todos os concursos
+# + datas onde disponíveis). Serve de fonte para o /sync quando as APIs da
+# Caixa/guidi estão inacessíveis — o caso do Vercel, cujo IP de datacenter é
+# bloqueado. Ambas trazem o histórico completo até a data do último build; o
+# que vier depois entra pelo /sync.
 SEED_FILES = {
     "mega": DATA_DIR / "seed_megasena.json",
     "lofa": DATA_DIR / "seed_lotofacil.json",

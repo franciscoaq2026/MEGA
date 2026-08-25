@@ -87,7 +87,9 @@ export default function Probabilidades() {
         title={
           <span className="inline-flex items-center gap-1.5">
             Chance por tamanho de aposta
-            <Help text="Probabilidade exata de cada faixa, por hipergeométrica. Aumentar as dezenas é a ÚNICA coisa que muda a probabilidade de verdade — e o custo sobe na mesma proporção, porque uma aposta de k dezenas é literalmente C(k,15) apostas simples." />
+            <Help
+              text={`Probabilidade exata de cada faixa, por hipergeométrica. Aumentar as dezenas é a ÚNICA coisa que muda a probabilidade de verdade — e o custo sobe na mesma proporção, porque uma aposta de k dezenas é literalmente C(k,${cfg.escolher}) apostas simples.`}
+            />
           </span>
         }
         subtitle={`Aposta simples: ${cfg.escolher} dezenas por ${formatMoney(cfg.preco)}`}
@@ -155,7 +157,9 @@ export default function Probabilidades() {
           title={
             <span className="inline-flex items-center gap-1.5">
               O que você acerta mesmo no pior caso
-              <Help text="Princípio da casa dos pombos: como só existem 25 dezenas e 15 são sorteadas, ao marcar k você deixa 25-k de fora — e no máximo essas podem escapar. O mínimo garantido é k + 15 - 25, sem depender de sorte nenhuma." />
+              <Help
+                text={`Princípio da casa dos pombos: como só existem ${cfg.total} dezenas e ${cfg.sorteadas} são sorteadas, ao marcar k você deixa ${cfg.total}-k de fora — e no máximo essas podem escapar. O mínimo garantido é k + ${cfg.sorteadas} - ${cfg.total}, sem depender de sorte nenhuma.`}
+              />
             </span>
           }
           subtitle="Acertos garantidos em qualquer sorteio, sem depender de sorte"
@@ -212,8 +216,10 @@ export default function Probabilidades() {
             <p className={`text-sm text-zinc-700 mt-3 border rounded-lg px-3 py-2 ${cfg.tintClass}`}>
               Em média, <strong>{pct(tabela.linhas[0].retorno_fixo.pct)}</strong> de cada aposta
               volta só por estas faixas fixas — e essa fração é a{' '}
-              <strong>mesma para 15 ou para 20 dezenas</strong>, justamente porque a aposta maior é
-              só um pacote de apostas simples.
+              <strong>
+                mesma para {cfg.escolher} ou para {cfg.maxEscolher} dezenas
+              </strong>
+              , justamente porque a aposta maior é só um pacote de apostas simples.
             </p>
           )}
         </Card>

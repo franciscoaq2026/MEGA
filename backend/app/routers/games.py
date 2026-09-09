@@ -51,7 +51,7 @@ def _valida_tamanho(k: int, cfg: dict, minimo: int | None = None) -> int:
 
 class GenerateRequest(BaseModel):
     estrategia: Literal["aleatorio", "frequencia", "atrasados", "balanceado"]
-    jogos: int = Field(1, ge=1, le=20)
+    jogos: int = Field(1, ge=1, le=100)
     dezenas: int = Field(0, ge=0, le=50)  # 0 = aposta simples da loteria
     anti_rateio: bool = False
     # Espalha os jogos (menor sobreposição entre eles). Só faz sentido em

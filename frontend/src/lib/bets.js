@@ -144,6 +144,34 @@ export function exportBets(loteria = 'mega') {
   URL.revokeObjectURL(url)
 }
 
+// CSV dos jogos RECÉM-GERADOS (tela "Gerar jogos"), antes de qualquer "salvar"
+// — não mexe no localStorage nem depende de bet salva. Um jogo por linha,
+// dezenas em colunas fixas (preenchidas com "" quando o jogo tem menos
+// dezenas que o maior do lote, caso de aposta múltipla misturada).
+//
+// Separador ";" (não ",") porque o Excel em pt-BR usa vírgula como separador
+// decimal e só quebra em colunas automaticamente com ";". BOM UTF-8 no início
+// evita acentuação quebrada ao abrir direto no Excel.
+export function exportJogosCSV(jogos, loteria = 'mega') {
+  if (!jogos?.length) return
+  const maxDezenas = Math.max(...jogos.map((j) => j.dezenas.length))
+  const colunas = Array.from({ length: maxDezenas }, (_, i) => `dezena_${i + 1}`)
+  const header = ['jogo', ...colunas, 'soma', 'pares'].join(';')
+  const linhas = jogos.map((j, i) => {
+    const dz = [...j.dezenas].sort((a, b) => a - b).map((n) => String(n).padStart(2, '0'))
+    while (dz.length < maxDezenas) dz.push('')
+    return [i + 1, ...dz, j.soma, j.pares].join(';')
+  })
+  const csv = [header, ...linhas].join('\r\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${loteria}-jogos-gerados-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export async function importBets(file, loteria = 'mega') {
   const text = await file.text()
   const data = JSON.parse(text)

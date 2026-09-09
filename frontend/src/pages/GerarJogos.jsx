@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
-import { addBet } from '../lib/bets.js'
+import { addBet, exportJogosCSV } from '../lib/bets.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Help from '../components/Help.jsx'
@@ -159,6 +159,25 @@ export default function GerarJogos() {
     setSalvos((s) => ({ ...s, [i]: concursoSalvar }))
   }
 
+  // Salva todo mundo que ainda não foi salvo, um addBet() por jogo (é o mesmo
+  // caminho do botão individual — só evita clicar jogo por jogo num lote grande).
+  function salvarTodos() {
+    if (!concursoSalvar || !result) return
+    const novos = { ...salvos }
+    for (const [i, jogo] of result.jogos.entries()) {
+      if (novos[i]) continue
+      addBet({
+        loteria: code,
+        concurso: concursoSalvar,
+        origem: 'app',
+        estrategia: result.estrategia,
+        dezenas: jogo.dezenas,
+      })
+      novos[i] = concursoSalvar
+    }
+    setSalvos(novos)
+  }
+
   async function rodarBacktest() {
     setBacktestBusy(true)
     setBacktestError(null)
@@ -283,14 +302,14 @@ export default function GerarJogos() {
               <label className="text-sm">
                 <span className="text-zinc-600 inline-flex items-center gap-1.5">
                   Quantos jogos
-                  <Help text="Quantos bilhetes simples separados gerar (1 a 20). Cada bilhete a mais aumenta a sua chance de verdade, na proporção do que custa: 2 jogos = 2x a chance do prêmio principal." />
+                  <Help text="Quantos bilhetes simples separados gerar (1 a 100). Cada bilhete a mais aumenta a sua chance de verdade, na proporção do que custa: 2 jogos = 2x a chance do prêmio principal. Acima de ~100 o espalhamento fica lento (cada bilhete novo é comparado com todos os anteriores)." />
                 </span>
                 <input
                   type="number"
                   min="1"
-                  max="20"
+                  max="100"
                   value={qtdJogos}
-                  onChange={(e) => setQtdJogos(Math.min(20, Math.max(1, Number(e.target.value))))}
+                  onChange={(e) => setQtdJogos(Math.min(100, Math.max(1, Number(e.target.value))))}
                   className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
                 />
                 <span className="block text-[11px] text-zinc-500 mt-1">
@@ -552,16 +571,31 @@ export default function GerarJogos() {
               )}
             </div>
           )}
-          <label className="flex items-center gap-2 text-sm mb-3">
-            <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
-            <input
-              type="number"
-              min="1"
-              value={concursoSalvar}
-              onChange={(e) => setConcursoSalvar(e.target.value)}
-              className="w-24 border border-zinc-300 rounded-lg px-2 py-1"
-            />
-          </label>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-zinc-600">Salvar como “jogo do app” no concurso</span>
+              <input
+                type="number"
+                min="1"
+                value={concursoSalvar}
+                onChange={(e) => setConcursoSalvar(e.target.value)}
+                className="w-24 border border-zinc-300 rounded-lg px-2 py-1"
+              />
+            </label>
+            <button
+              onClick={salvarTodos}
+              disabled={!concursoSalvar || result.jogos.every((_, i) => salvos[i])}
+              className="text-xs px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-700 font-medium hover:bg-emerald-50 disabled:opacity-50"
+            >
+              Salvar todos os jogos
+            </button>
+            <button
+              onClick={() => exportJogosCSV(result.jogos, code)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-zinc-300 text-zinc-700 font-medium hover:bg-zinc-50"
+            >
+              Exportar CSV
+            </button>
+          </div>
           <div className="grid sm:grid-cols-2 gap-3">
             {result.jogos.map((j, i) => (
               <div key={i} className="border border-zinc-200 rounded-lg p-3">

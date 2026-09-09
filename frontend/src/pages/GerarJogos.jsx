@@ -302,14 +302,14 @@ export default function GerarJogos() {
               <label className="text-sm">
                 <span className="text-zinc-600 inline-flex items-center gap-1.5">
                   Quantos jogos
-                  <Help text="Quantos bilhetes simples separados gerar (1 a 100). Cada bilhete a mais aumenta a sua chance de verdade, na proporção do que custa: 2 jogos = 2x a chance do prêmio principal. Acima de ~100 o espalhamento fica lento (cada bilhete novo é comparado com todos os anteriores)." />
+                  <Help text="Quantos bilhetes simples separados gerar (1 a 200). Cada bilhete a mais aumenta a sua chance de verdade, na proporção do que custa: 2 jogos = 2x a chance do prêmio principal. O teto de 200 (~2s de geração) fica bem longe do limite de 60s da função serverless — acima disso o tempo cresce quadrático (cada bilhete novo é comparado com todos os anteriores no espalhamento)." />
                 </span>
                 <input
                   type="number"
                   min="1"
-                  max="100"
+                  max="200"
                   value={qtdJogos}
-                  onChange={(e) => setQtdJogos(Math.min(100, Math.max(1, Number(e.target.value))))}
+                  onChange={(e) => setQtdJogos(Math.min(200, Math.max(1, Number(e.target.value))))}
                   className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
                 />
                 <span className="block text-[11px] text-zinc-500 mt-1">

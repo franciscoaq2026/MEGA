@@ -266,3 +266,88 @@ def test_odds_carteira_lotofacil_usa_tabela_enumerada():
     r = generator.odds_carteira(12, "lofa", espalhar=True)
     assert r["metodo"] == "enumerado"
     assert r["qualquer"]["prob"] > r["qualquer_solto"]["prob"]
+
+
+def test_zona_gratuita_da_mega_fura_em_lotes_grandes():
+    """Bug real corrigido: a Mega só garante sobreposição <= limiar (a 'zona
+    gratuita') para N pequeno — o gerador greedy fura isso bem antes do teto
+    matemático ingênuo (N*p <= 1, que só travaria perto de N=2298). Este teste
+    prova que a sobreposição real ultrapassa o limiar num N bem menor, para
+    justificar por que `odds_carteira` não pode confiar cegamente nisso."""
+    mega = lotteries.LOTERIAS["mega"]
+    limiar = generator.limiar_sobreposicao(mega)
+    jogos = generator.gerar([], "aleatorio", 100, 6, False, loteria="mega", espalhar=True, rng=random.Random(7))
+    overlap = generator.resumo_sobreposicao(jogos, 6, "mega")
+    assert overlap["maxima"] > limiar, (
+        "se isto passar a ser falso, o gerador melhorou e o teste seguinte "
+        "(que depende de furar a zona gratuita) precisa de um N maior"
+    )
+
+
+def test_odds_carteira_mega_nao_superestima_alem_da_zona_gratuita():
+    """O bug: com bilhetes reais cuja sobreposição já ultrapassa o limiar, o
+    código antigo continuava devolvendo 'exato' = N*p — superestimando a
+    chance real em ~0,15pp num lote de 200 (contra simulação de 3 milhões de
+    sorteios). Agora tem que medir, nunca devolver mais que o teto de Boole,
+    e não pode mais alegar 'exato'."""
+    p_uma = generator.odds(6, loteria="mega")["qualquer"]["prob"]
+    jogos = generator.gerar([], "aleatorio", 100, 6, False, loteria="mega", espalhar=True, rng=random.Random(7))
+    bilhetes = [set(j["dezenas"]) for j in jogos]
+    r = generator.odds_carteira(100, "mega", espalhar=True, bilhetes=bilhetes, rng=random.Random(1))
+    assert r["metodo"] == "simulado"
+    teto = 100 * p_uma
+    assert r["qualquer"]["prob"] <= teto + 1e-12, "nunca pode superar o teto de Boole (N*p)"
+    # a chance medida tem que ficar perto do teto (a correção é pequena aqui:
+    # só ~10% dos pares excedem o limiar, e cada um custa muito pouco), não
+    # despencar como despencaria uma correção de 2ª ordem mal calibrada.
+    assert teto * 0.9 < r["qualquer"]["prob"] <= teto
+
+
+def test_odds_carteira_respeita_zona_gratuita_com_bilhetes_reais():
+    """Caso feliz sem regressão: com N pequeno (sobreposição real ainda dentro
+    do limiar), continua exato e idêntico a N*p — não precisa simular nada."""
+    p_uma = generator.odds(6, loteria="mega")["qualquer"]["prob"]
+    jogos = generator.gerar([], "aleatorio", 10, 6, False, loteria="mega", espalhar=True, rng=random.Random(1))
+    bilhetes = [set(j["dezenas"]) for j in jogos]
+    r = generator.odds_carteira(10, "mega", espalhar=True, bilhetes=bilhetes)
+    assert r["metodo"] == "exato"
+    assert abs(r["qualquer"]["prob"] - 10 * p_uma) < 1e-15
+
+
+def test_odds_carteira_lotofacil_alem_da_tabela_ainda_mostra_ganho_real():
+    """Bug real corrigido: acima de N=20 (fora da tabela medida por
+    enumeração), a Lotofácil caía sempre no independente — 'espalhar' virava
+    um no-op silencioso (mesmo número com a opção ligada ou desligada), na
+    faixa que o teto de jogos por geração (100, depois 200) passou a
+    alcançar de verdade. Agora tem que continuar refletindo um ganho real."""
+    n = 42
+    assert n not in lotteries.LOTERIAS["lofa"]["carteira_espalhada"], "N já teria entrada exata na tabela"
+    espalhado = generator.odds_carteira(n, "lofa", espalhar=True)
+    solto = generator.odds_carteira(n, "lofa", espalhar=False)
+    assert espalhado["metodo"] == "simulado"
+    assert espalhado["qualquer"]["prob"] > solto["qualquer"]["prob"] + 0.005, (
+        "espalhar precisa mostrar um ganho real e não trivial acima de N=20"
+    )
+
+
+def test_odds_carteira_prioriza_tabela_medida_mesmo_com_bilhetes_reais():
+    """A tabela por enumeração exata é mais precisa que simular sobre um lote
+    específico — tem que vencer mesmo quando `bilhetes` reais são passados."""
+    jogos = generator.gerar([], "aleatorio", 12, 15, False, loteria="lofa", espalhar=True, rng=random.Random(3))
+    bilhetes = [set(j["dezenas"]) for j in jogos]
+    r = generator.odds_carteira(12, "lofa", espalhar=True, bilhetes=bilhetes)
+    assert r["metodo"] == "enumerado"
+    assert r["qualquer"]["prob"] == lotteries.LOTERIAS["lofa"]["carteira_espalhada"][12]
+
+
+def test_odds_carteira_nao_tenta_gerar_previa_gigante():
+    """Acima do teto prático de jogos (200, o limite do endpoint /generate),
+    não vale a pena arriscar montar um lote de prévia O(N²) só para estimar a
+    prévia ao vivo — cai no independente (conservador, nunca superestima) em
+    vez de travar a requisição."""
+    import time
+
+    t0 = time.time()
+    r = generator.odds_carteira(5000, "mega", espalhar=True)
+    assert time.time() - t0 < 1.0
+    assert r["metodo"] == "independente"

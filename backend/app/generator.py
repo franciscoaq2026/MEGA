@@ -356,29 +356,120 @@ def resumo_sobreposicao(jogos: list[dict], k: int, loteria: str = "mega") -> dic
     }
 
 
-def _qualquer_espalhado(n_jogos: int, p_uma: float, cfg: dict) -> tuple[float, str]:
+def _overlap_maximo(bilhetes: list[set[int]]) -> int:
+    """Maior sobreposição entre qualquer par do lote (0 se houver <2 bilhetes)."""
+    n = len(bilhetes)
+    if n < 2:
+        return 0
+    return max(
+        len(bilhetes[i] & bilhetes[j]) for i in range(n) for j in range(i + 1, n)
+    )
+
+
+def qualquer_medido(
+    bilhetes: list[set[int]], cfg: dict, trials: int = 60_000, rng: random.Random | None = None
+) -> float:
+    """P(ganhar QUALQUER prêmio) medida por simulação direta sobre os bilhetes
+    DE VERDADE — sorteia `trials` resultados possíveis e conta em quantos
+    algum bilhete bate a faixa mínima.
+
+    Ao contrário de uma fórmula fechada, isto captura QUALQUER correlação
+    entre bilhetes automaticamente (inclusive 3 ou mais ganhando juntos no
+    mesmo sorteio), sem precisar assumir nada sobre como eles se sobrepõem —
+    ao custo de ruído de amostragem, pequeno com `trials` na casa de 10⁴–10⁵
+    (erro-padrão bem abaixo de 0,1 ponto percentual nas faixas de chance que
+    aparecem aqui). Usado só quando a sobreposição do lote real ULTRAPASSA a
+    zona gratuita (`limiar_sobreposicao`) — dentro dela a conta é exata e sai
+    de graça, sem precisar simular nada."""
+    rng = rng or random.Random()
+    pool = lotteries.numbers(cfg)
+    sorteadas = cfg["sorteadas"]
+    min_faixa = min(cfg["faixas"])
+    ganhou = 0
+    for _ in range(trials):
+        sorteio = set(rng.sample(pool, sorteadas))
+        if any(len(b & sorteio) >= min_faixa for b in bilhetes):
+            ganhou += 1
+    return ganhou / trials
+
+
+def _qualquer_espalhado(
+    n_jogos: int,
+    p_uma: float,
+    cfg: dict,
+    bilhetes: list[set[int]] | None = None,
+    rng: random.Random | None = None,
+) -> tuple[float, str]:
     """Chance de levar algo com N bilhetes ESPALHADOS pelo gerador do app.
 
-    Duas situações, e as duas são exatas — não são estimativas:
+    Isto substitui uma versão anterior que decidia "zona gratuita" por uma
+    SUPOSIÇÃO estática (uma flag por loteria + `N·p <= 1`), sem checar se o
+    gerador de verdade conseguia manter a sobreposição baixa. Medido: para a
+    Mega, a suposição furava a partir de N≈25–40 (variando com a semente) —
+    beeeem antes do teto antigo de N·p<=1 (que só travaria perto de N=2298) —
+    e o painel continuava afirmando "exato" com um erro real (~0,15pp em
+    N=200, contra simulação de 3 milhões de sorteios). Na Lotofácil, a tabela
+    medida (`carteira_espalhada`) só ia até N=20; acima disso o código caía no
+    independente e a opção "espalhar" virava um "faz de conta" sem efeito.
 
-    1. Zona gratuita (`limiar_sobreposicao`): se nenhum par de bilhetes pode
-       premiar no mesmo sorteio, a inclusão-exclusão não tem termo a subtrair e
-       P = N·p, o teto absoluto. Na Mega o gerador fica nessa zona (sobreposição
-       máxima 1) para todo N até 20 — verificado em teste.
-    2. Fora dela, o valor depende de COMO os bilhetes se sobrepõem, então não há
-       fórmula fechada: usamos a tabela medida por enumeração de todos os
-       sorteios (`carteira_espalhada` em lotteries.py).
+    Ordem de prioridade (a mais precisa que se aplica ganha):
 
-    Sem tabela e fora da zona, cai no independente `1-(1-p)^N`, que é o piso."""
-    if cfg.get("espalhar_na_zona_gratuita") and n_jogos * p_uma <= 1:
-        return n_jogos * p_uma, "exato"
+    1. Zona gratuita (`limiar_sobreposicao`) medida no lote DE VERDADE — se
+       `bilhetes` foi passado (chamada de `/generate`, jogos já gerados) e
+       nenhum par ultrapassa o limiar, P = N·p é exata, sem termo de correção
+       (a inclusão-exclusão não tem o que subtrair).
+    2. Tabela medida por enumeração exata dos 3.268.760 sorteios possíveis
+       (`carteira_espalhada` em lotteries.py) quando N está nela — mais
+       precisa que simular, então tem prioridade mesmo com `bilhetes` real
+       em mãos.
+    3. Fora das duas: mede por simulação (`qualquer_medido`) sobre os
+       bilhetes reais quando existem, ou sobre um lote de PRÉVIA gerado com o
+       mesmo motor (semente fixa por N, então o painel ao vivo não muda a
+       cada consulta) quando ainda não há jogos gerados.
+
+    O resultado da simulação nunca pode superar o teto de Boole (N·p, válido
+    sempre, com ou sem correlação entre bilhetes) — sem o `min()`, ruído de
+    amostragem ocasionalmente empurra a estimativa acima do teto, o que
+    pareceria um erro pra quem está lendo o painel."""
+    limiar = limiar_sobreposicao(cfg)
+    teto = n_jogos * p_uma  # Boole: P(união) <= soma das probabilidades, sempre
     tabela = cfg.get("carteira_espalhada") or {}
+
+    if bilhetes is not None and _overlap_maximo(bilhetes) <= limiar:
+        return teto, "exato"
     if n_jogos in tabela:
         return tabela[n_jogos], "enumerado"
-    return 1 - (1 - p_uma) ** n_jogos, "independente"
+    if bilhetes is not None:
+        return min(qualquer_medido(bilhetes, cfg, rng=rng), teto), "simulado"
+    if n_jogos <= 1:
+        return teto, "exato"
+
+    # `/odds/carteira` aceita N até 100.000 (histórico, para outros usos), mas
+    # gerar um lote de prévia com "espalhar" é O(N²) (generator.gerar) — em
+    # N=1000 já são ~47s. `/generate` trava em 200 jogos (vercel.json,
+    # maxDuration=60s); acima disso não vale a pena arriscar montar prévia
+    # nenhuma, então cai no independente (o piso, nunca superestima).
+    if n_jogos > 200:
+        return 1 - (1 - p_uma) ** n_jogos, "independente"
+
+    preview_rng = random.Random(90_000 + n_jogos)  # estável entre consultas do mesmo N
+    preview = gerar(
+        [], "aleatorio", n_jogos, cfg["escolher"], False, loteria=cfg["code"],
+        espalhar=True, rng=preview_rng,
+    )
+    preview_bilhetes = [set(j["dezenas"]) for j in preview]
+    if _overlap_maximo(preview_bilhetes) <= limiar:
+        return teto, "exato"
+    return min(qualquer_medido(preview_bilhetes, cfg, rng=preview_rng), teto), "simulado"
 
 
-def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -> dict:
+def odds_carteira(
+    n_jogos: int,
+    loteria: str = "mega",
+    espalhar: bool = False,
+    bilhetes: list[set[int]] | None = None,
+    rng: random.Random | None = None,
+) -> dict:
     """Probabilidade acumulada de N apostas simples SEPARADAS.
 
     Para cada faixa, a chance de pelo menos uma das N apostas bater. Como a
@@ -404,7 +495,7 @@ def odds_carteira(n_jogos: int, loteria: str = "mega", espalhar: bool = False) -
         faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
     if espalhar and n_jogos > 1:
-        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg)
+        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg, bilhetes=bilhetes, rng=rng)
     else:
         qualquer, metodo = 1 - (1 - p_uma) ** n_jogos, "independente"
     solto = 1 - (1 - p_uma) ** n_jogos

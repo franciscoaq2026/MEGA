@@ -450,7 +450,9 @@ export default function GerarJogos() {
                       ) : (
                         <>
                           sem espalhar seria <strong>{fmt(carteira.qualquer_solto.pct)}%</strong> —
-                          medido por enumeração de todos os sorteios possíveis
+                          {carteira.metodo === 'enumerado'
+                            ? ' medido por enumeração exata de todos os sorteios possíveis'
+                            : ' medido por simulação sobre os bilhetes deste lote (seus bilhetes já se sobrepõem mais do que a zona sem custo permite)'}
                         </>
                       )}
                       . O retorno médio é o mesmo nos dois casos.

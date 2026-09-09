@@ -44,10 +44,11 @@ LOTERIAS: dict[str, dict] = {
         },
         "max_roda_completa": 11,   # C(11,6) = 462 jogos
         "max_reduzida": 15,        # C(15,6) = 5.005 combinações a cobrir
-        # Espalhar aqui alcança a "zona gratuita" (sobreposição <= 1, o limiar
-        # da Mega) para qualquer N até 20 — 6 dezenas em 60 sobra volante de
-        # sobra. Logo P(levar algo) = N·p EXATAMENTE, sem precisar de tabela.
-        "espalhar_na_zona_gratuita": True,
+        # Não há mais uma flag fixa dizendo que "espalhar" sempre alcança a
+        # zona gratuita aqui: isso valia para N pequeno (medido até ~20), mas
+        # o gerador greedy (`_qualquer_espalhado` em generator.py) passa a
+        # furar essa zona a partir de N≈25–40 — o código agora CHECA a
+        # sobreposição real do lote em vez de supor.
         # A partir de quantos consecutivos o jogo vira "desenho no volante"
         # (padrão popular → risco de rateio). Marcar 6 de 60 raramente encosta
         # em 4 seguidos, então 4 já é suspeito.

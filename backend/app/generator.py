@@ -293,9 +293,23 @@ def gerar(
                 if sobrep <= piso:
                     break
         if jogo is None:
-            # espalhando, ou nenhum candidato passou nos filtros: usa o melhor
-            jogo = melhor or gerador(rng, draws, dezenas, numbers)
-            motivos = motivos if melhor else padrao_popular(jogo, premiadas, cfg)
+            # Espalhando, ou nenhum candidato passou nos filtros: fica com o
+            # melhor que apareceu (esse já passou pelo `vistos` no laço acima).
+            if melhor is not None:
+                jogo = melhor
+            else:
+                # Nenhum candidato sobreviveu aos filtros: sorteia um novo, mas
+                # ainda respeitando `vistos`. Bilhete repetido no mesmo lote é
+                # dinheiro gasto sem cobrir nada de novo — antes este caminho
+                # pulava a trava e podia emitir duplicata (reproduzido em 4% dos
+                # lotes numa loteria sintética com o espaço quase esgotado).
+                # Se nem assim sair inédito, as combinações realmente acabaram.
+                for _ in range(200):
+                    cand = gerador(rng, draws, dezenas, numbers)
+                    if tuple(cand) not in vistos:
+                        break
+                jogo = cand
+                motivos = padrao_popular(jogo, premiadas, cfg)
 
         vistos.add(tuple(jogo))
         escolhidos.append(set(jogo))
@@ -305,10 +319,6 @@ def gerar(
             "pares": sum(1 for n in jogo if n % 2 == 0),
             "padroes_populares": motivos,
         }
-        if espalhar and len(escolhidos) > 1:
-            item["max_repetidas_dos_outros"] = max(
-                len(set(jogo) & e) for e in escolhidos[:-1]
-            )
         resultado.append(item)
     return resultado
 

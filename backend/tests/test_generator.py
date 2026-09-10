@@ -351,3 +351,32 @@ def test_odds_carteira_nao_tenta_gerar_previa_gigante():
     r = generator.odds_carteira(5000, "mega", espalhar=True)
     assert time.time() - t0 < 1.0
     assert r["metodo"] == "independente"
+
+
+def test_fallback_nao_emite_bilhete_duplicado():
+    """Bilhete repetido no mesmo lote é dinheiro gasto sem cobrir nada novo.
+    O laço principal já barrava isso via `vistos`, mas o caminho de fallback
+    (quando nenhum candidato passa nos filtros) sorteava um jogo novo SEM
+    consultar a trava. Com Mega/Lotofácil isso é inalcançável (o espaço de
+    combinações é grande demais), então o teste usa uma loteria sintética
+    minúscula — 20 combinações possíveis — onde o caminho é exercitado de
+    verdade: antes da correção, 4% dos lotes saíam com duplicata."""
+    lotteries.LOTERIAS["_mini_teste"] = {
+        "code": "_mini_teste", "nome": "Mini", "min_num": 1, "max_num": 6,
+        "total": 6, "escolher": 3, "max_escolher": 4, "sorteadas": 3,
+        "faixas": {3: "cheia", 2: "dupla"}, "fonte": "mini", "cols": 3,
+        "preco": 1.0, "avancada": False, "premios_fixos": {},
+        "consecutivos_populares": 99,
+    }
+    try:
+        for seed in range(60):
+            jogos = generator.gerar(
+                [], "aleatorio", 20, 3, anti_rateio=False,
+                loteria="_mini_teste", espalhar=False, rng=random.Random(seed),
+            )
+            chaves = [tuple(j["dezenas"]) for j in jogos]
+            assert len(chaves) == len(set(chaves)), (
+                f"semente {seed}: lote com bilhete duplicado — o fallback furou o `vistos`"
+            )
+    finally:
+        del lotteries.LOTERIAS["_mini_teste"]

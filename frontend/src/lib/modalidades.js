@@ -10,6 +10,17 @@
 // Caixa arredonda para baixo, mantivemos o número oficial (diferença de ±1).
 //
 // Preços: tabela vigente após o reajuste de 09/07/2025 (Super Sete em 30/07/2025).
+// Reconferido em 13/09/2026: não houve novo reajuste — os valores seguem válidos.
+//
+// Dias de sorteio: atualizados em 13/09/2026. Desde 19/07/2026 os sorteios que
+// aconteciam no SÁBADO passaram para DOMINGO, às 11h (Mega-Sena, Lotofácil,
+// Quina, Timemania, Dupla Sena, Dia de Sorte, +Milionária e Federal). Lotomania,
+// Super Sete e Loteca não mudaram. As regras de aposta, os preços e as
+// PROBABILIDADES seguiram inalterados — só o calendário mudou.
+//
+// `premioBase`: valores OBSERVADOS em julho/2025 (ver `baseFonte` de cada uma).
+// São uma foto, não um dado vivo: a Caixa reajusta os mínimos ao longo do tempo,
+// e `retorno` (quanto volta por aposta) é derivado deles.
 
 /** Probabilidade de levar QUALQUER faixa de prêmio, somando todas as faixas.
  *
@@ -33,7 +44,7 @@ const RAW = [
     aposta: '6 dezenas de 60',
     sorteio: 'sorteia 6 dezenas',
     preco: 6.0,
-    dias: '3x por semana (ter, qui, sáb)',
+    dias: '3x por semana (ter, qui, dom)',
     qualquerExato: 2298, // hipergeométrica exata; a soma das faixas dá 2.297
     faixas: [
       { label: 'Sena (6)', umEm: 50063860, principal: true },
@@ -52,7 +63,7 @@ const RAW = [
     aposta: '6 dezenas de 50 + 2 trevos de 6',
     sorteio: 'sorteia 6 dezenas + 2 trevos',
     preco: 6.0,
-    dias: '2x por semana (qua, sáb)',
+    dias: '2x por semana (qua, dom)',
     faixas: [
       { label: '6 acertos + 2 trevos', umEm: 238360500, principal: true },
       { label: '6 + 1 trevo', umEm: 29795062 },
@@ -77,7 +88,7 @@ const RAW = [
     aposta: '10 dezenas de 80 + Time do Coração',
     sorteio: 'sorteia 7 dezenas + 1 time',
     preco: 3.5,
-    dias: '3x por semana (ter, qui, sáb)',
+    dias: '3x por semana (ter, qui, dom)',
     faixas: [
       { label: '7 acertos', umEm: 26472637, principal: true },
       { label: '6 acertos', umEm: 216103 },
@@ -98,7 +109,7 @@ const RAW = [
     aposta: '5 dezenas de 80',
     sorteio: 'sorteia 5 dezenas',
     preco: 3.0,
-    dias: '6x por semana (seg a sáb)',
+    dias: '6x por semana (seg a sex e dom)',
     faixas: [
       { label: 'Quina (5)', umEm: 24040016, principal: true },
       { label: 'Quadra (4)', umEm: 64106 },
@@ -159,7 +170,7 @@ const RAW = [
     aposta: '6 dezenas de 50',
     sorteio: 'sorteia 6 dezenas DUAS vezes',
     preco: 3.0,
-    dias: '3x por semana (ter, qui, sáb)',
+    dias: '3x por semana (ter, qui, dom)',
     // Faixas já consolidadas: chance de bater a faixa em pelo menos um dos 2 sorteios.
     faixas: [
       { label: 'Sena (6)', umEm: 7945350, principal: true },
@@ -179,7 +190,7 @@ const RAW = [
     aposta: '7 dezenas de 31 + 1 Mês de Sorte',
     sorteio: 'sorteia 7 dezenas + 1 mês',
     preco: 2.5,
-    dias: '3x por semana (ter, qui, sáb)',
+    dias: '3x por semana (ter, qui, dom)',
     faixas: [
       { label: '7 acertos', umEm: 2629575, principal: true },
       { label: '6 acertos', umEm: 15652 },
@@ -199,7 +210,7 @@ const RAW = [
     aposta: '15 dezenas de 25',
     sorteio: 'sorteia 15 dezenas',
     preco: 3.5,
-    dias: '6x por semana (seg a sáb)',
+    dias: '6x por semana (seg a sex e dom)',
     faixas: [
       { label: '15 acertos', umEm: 3268760, principal: true },
       { label: '14 acertos', umEm: 21791 },
@@ -239,7 +250,7 @@ const RAW = [
     // Vendida em bilhete inteiro (R$ 40) ou frações. Usamos a fração de 1/10,
     // que é a compra usual, para ficar comparável às outras apostas mínimas.
     preco: 4.0,
-    dias: '2x por semana (qua, sáb)',
+    dias: '2x por semana (qua, dom)',
     faixas: [
       { label: '1º prêmio', umEm: 100000, principal: true },
       { label: 'qualquer dos 5 prêmios', umEm: 20000 },

@@ -8,6 +8,7 @@ import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Volante from '../components/Volante.jsx'
 import { formatDate } from '../lib/format.js'
+import { MIN_CONCURSOS, desempenhoPorEstrategia } from '../lib/desempenho.js'
 
 // Cor por faixa premiada. As chaves vêm do backend (Mega: sena/quina/quadra;
 // Lotofácil: "15 acertos" … "11 acertos").
@@ -61,6 +62,250 @@ function Avaliacao({ av, faixa }) {
         </>
       )}
     </p>
+  )
+}
+
+const VEREDITO_STYLE = {
+  ...NIVEL_STYLE,
+  insuficiente: 'bg-white border-dashed border-zinc-300 text-zinc-400',
+}
+
+// Sinal decidido DEPOIS de arredondar: −0,001 não pode virar "−0,00".
+const sinal = (n, d = 2) => {
+  const r = Number(n.toFixed(d))
+  return (r > 0 ? '+' : r < 0 ? '−' : '') + num(Math.abs(r), d)
+}
+
+function Veredito({ linha }) {
+  return (
+    <span
+      className={`text-[11px] border rounded px-1.5 py-0.5 whitespace-nowrap ${
+        VEREDITO_STYLE[linha.nivel]
+      }`}
+    >
+      {linha.veredito}
+    </span>
+  )
+}
+
+const premiosTxt = (l) => num(l.premiadosEsperados, l.premiadosEsperados < 1 ? 2 : 1)
+
+/* Diferença para o acaso com o intervalo, numa escala comum a todas as
+   linhas: o traço vertical é o zero (o que qualquer jogo faz em média). Se a
+   barra cruza o traço, a estratégia não se distingue do acaso. */
+function BarraIC({ linha, escala }) {
+  const pos = (v) => `${50 + (Math.max(-escala, Math.min(escala, v)) / escala) * 50}%`
+  const [lo, hi] = linha.ic
+  return (
+    <div className="relative h-4 w-28 sm:w-36" aria-hidden="true">
+      <div className="absolute inset-y-0 left-1/2 w-px bg-zinc-400" />
+      <div
+        className={`absolute top-1/2 h-1 -translate-y-1/2 rounded-full ${
+          linha.nivel === 'insuficiente' ? 'bg-zinc-200' : 'bg-zinc-300'
+        }`}
+        style={{ left: pos(lo), width: `calc(${pos(hi)} - ${pos(lo)})` }}
+      />
+      <div
+        className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-700"
+        style={{ left: pos(linha.diferenca) }}
+      />
+    </div>
+  )
+}
+
+// Esperado com poucas casas: "0,9" diz mais que "0,94", e o que é quase
+// impossível vira "~0" em vez de uma fila de zeros.
+const espTxt = (v) => (v < 0.05 ? '~0' : num(v, v < 10 ? 1 : 0))
+
+/* Quantos jogos de cada estratégia fizeram 0, 1, 2… acertos. É o que a média
+   esconde: muitos jogos de 1 acerto e um jogo de 3 podem dar a mesma média,
+   mas só o segundo chega perto do prêmio. Embaixo de cada contagem, quantos
+   jogos o acaso daria — sem isso, "1 jogo com 3 acertos" não diz se foi bom. */
+function DistribuicaoAcertos({ linhas, cfg }) {
+  const desde = cfg.acertosDesde ?? 0
+  const colunas = []
+  for (let h = desde; h <= cfg.sorteadas; h++) colunas.push(h)
+  // A primeira coluna junta tudo até `desde` (na Lotofácil, "≤7").
+  const valor = (arr, h) => (h === desde ? arr.slice(0, h + 1).reduce((s, v) => s + v, 0) : arr[h])
+  const premiadas = new Set(cfg.premios.map((p) => p.ac))
+  return (
+    <Card
+      title={`Quantos números cada jogo acertou — ${cfg.nome}`}
+      subtitle="Nº de jogos de cada estratégia por quantidade de acertos · embaixo, em cinza, quantos o acaso daria para a mesma quantidade de jogos"
+    >
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-xs sm:text-sm">
+          <thead>
+            <tr className="text-zinc-500 border-b border-zinc-200">
+              <th className="py-1.5 px-1 font-medium text-left sticky left-0 bg-white">
+                Acertos →
+              </th>
+              {colunas.map((h) => (
+                <th
+                  key={h}
+                  className={`py-1.5 px-1 font-semibold text-center tabular-nums ${
+                    premiadas.has(h) ? `${cfg.tintClass} border-x` : ''
+                  }`}
+                >
+                  {h === desde && desde > 0 ? `≤${h}` : h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.chave} className="border-b border-zinc-100 last:border-0">
+                <td className="py-1.5 px-1 sticky left-0 bg-white max-w-28 sm:max-w-none">
+                  <span className="block truncate" title={l.rotulo}>
+                    {l.rotulo}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">{l.jogos} jogos</span>
+                </td>
+                {colunas.map((h) => {
+                  const obs = valor(l.distrib, h)
+                  return (
+                    <td
+                      key={h}
+                      className={`py-1.5 px-1 text-center tabular-nums leading-tight ${
+                        premiadas.has(h) ? `${cfg.tintClass} border-x` : ''
+                      }`}
+                    >
+                      <span className={obs ? 'font-semibold' : 'text-zinc-300'}>{obs}</span>
+                      <span className="block text-[10px] text-zinc-400">
+                        {espTxt(valor(l.distribEsperada, h))}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-zinc-500 mt-3 leading-relaxed">
+        Colunas coloridas são as faixas que pagam prêmio. Compare a contagem com o número cinza:
+        se uma estratégia tivesse jeito de acertar mais, os jogos dela iriam se acumulando à
+        direita do esperado, concurso após concurso. Um jogo isolado numa coluna rara (o cinza
+        perto de zero) é sorte daquele sorteio. Com mais jogos, as contagens tendem ao cinza.
+      </p>
+    </Card>
+  )
+}
+
+function DesempenhoEstrategias({ dados, cfg, code }) {
+  const { linhas, avaliadas } = dados
+  const escala = Math.max(...linhas.flatMap((l) => l.ic.map(Math.abs)), 0.1)
+  return (
+    <Card
+      title={`Desempenho por estratégia — ${cfg.nome}`}
+      subtitle={`Seus jogos conferidos desta loteria, agrupados pela forma como foram gerados — comparados com o que o acaso entrega para o mesmo número de dezenas`}
+    >
+      {/* Celular: um bloco por estratégia — a tabela de 8 colunas não cabe. */}
+      <div className="sm:hidden divide-y divide-zinc-100">
+        {linhas.map((l) => (
+          <div key={l.chave} className="py-2 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">{l.rotulo}</span>
+              <Veredito linha={l} />
+            </div>
+            <p className="text-[11px] text-zinc-500 tabular-nums">
+              {l.jogos} jogos em {l.concursos} conc. · média <strong>{num(l.media)}</strong> · acaso{' '}
+              {num(l.esperado)} · prêmios {l.premiados} / {premiosTxt(l)} esp.
+            </p>
+            <div className="flex items-center gap-2 text-xs tabular-nums">
+              <span>
+                {sinal(l.diferenca)}
+                <span className="text-[11px] text-zinc-400">
+                  {' '}
+                  ({sinal(l.ic[0])} a {sinal(l.ic[1])})
+                </span>
+              </span>
+              <BarraIC linha={l} escala={escala} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden sm:block overflow-x-auto -mx-1">
+        <table className="w-full text-sm text-left">
+          <thead>
+            <tr className="text-xs text-zinc-500 border-b border-zinc-200">
+              <th className="py-1.5 px-1 font-medium">Estratégia</th>
+              <th className="py-1.5 px-1 font-medium text-right">Jogos</th>
+              <th className="py-1.5 px-1 font-medium text-right">Média</th>
+              <th className="py-1.5 px-1 font-medium text-right">Acaso</th>
+              <th className="py-1.5 px-1 font-medium text-right">Diferença (IC)</th>
+              <th className="py-1.5 px-1 font-medium" />
+              <th className="py-1.5 px-1 font-medium text-right">Prêmios</th>
+              <th className="py-1.5 px-1 font-medium">Veredito</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.chave} className="border-b border-zinc-100 last:border-0 align-middle">
+                <td className="py-1.5 px-1 whitespace-nowrap">{l.rotulo}</td>
+                <td className="py-1.5 px-1 text-right tabular-nums text-zinc-600 whitespace-nowrap">
+                  {l.jogos}
+                  <span className="text-[11px] text-zinc-400"> / {l.concursos} conc.</span>
+                </td>
+                <td className="py-1.5 px-1 text-right tabular-nums font-semibold">
+                  {num(l.media)}
+                </td>
+                <td className="py-1.5 px-1 text-right tabular-nums text-zinc-500">
+                  {num(l.esperado)}
+                </td>
+                <td className="py-1.5 px-1 text-right tabular-nums whitespace-nowrap">
+                  {sinal(l.diferenca)}
+                  <span className="text-[11px] text-zinc-400">
+                    {' '}
+                    ({sinal(l.ic[0])} a {sinal(l.ic[1])})
+                  </span>
+                </td>
+                <td className="py-1.5 px-1">
+                  <BarraIC linha={l} escala={escala} />
+                </td>
+                <td
+                  className="py-1.5 px-1 text-right tabular-nums text-zinc-600 whitespace-nowrap"
+                  title={`Melhor jogo: ${l.melhor} acertos`}
+                >
+                  {l.premiados}
+                  <span className="text-[11px] text-zinc-400">
+                    {' '}
+                    / {premiosTxt(l)} esp.
+                  </span>
+                </td>
+                <td className="py-1.5 px-1">
+                  <Veredito linha={l} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-xs text-zinc-500 mt-3 space-y-1.5 leading-relaxed">
+        <p>
+          <strong>Diferença</strong> é a média de acertos menos o que o acaso entrega para jogos
+          com as mesmas dezenas; o parêntese e a barra mostram o intervalo de 95%. Enquanto a
+          barra cruzar o traço do zero, a diferença cabe na sorte da amostra. Jogos do mesmo
+          concurso contam como dependentes, porque enfrentaram o mesmo sorteio.
+        </p>
+        <p>
+          Alguma linha sempre fica no topo: com várias estratégias lado a lado, uma delas vai
+          estar acima por puro acaso. Por isso o veredito só aparece a partir de {MIN_CONCURSOS}{' '}
+          concursos e, com várias estratégias avaliadas, o intervalo é alargado na mesma proporção
+          (correção de Bonferroni{avaliadas > 1 ? `, hoje para ${avaliadas} estratégias` : ''}). <strong>Prêmios</strong> conta jogos que chegaram a uma faixa
+          paga, ao lado de quantos o acaso daria (esp.).
+        </p>
+        {cfg.avancada && (
+          <p>
+            Para uma amostra maior e sem viés de escolha, rode o backtest em{' '}
+            <Link to={`/${code}/gerar`} className="text-emerald-700 underline">
+              Gerar jogos
+            </Link>
+            : ele joga cada estratégia nos últimos 100 concursos.
+          </p>
+        )}
+      </div>
+    </Card>
   )
 }
 
@@ -268,6 +513,10 @@ export default function MeusJogos() {
       confrontos: vitoriasManual + vitoriasApp + empates,
     }
   }, [bets, checks, grupos])
+
+  // `bets` só contém jogos da loteria aberta (cada uma tem sua chave no
+  // navegador e na nuvem), então Mega e Lotofácil nunca se misturam aqui.
+  const desempenho = useMemo(() => desempenhoPorEstrategia(bets, checks, cfg), [bets, checks, cfg])
 
   return (
     <div className="space-y-4">
@@ -528,6 +777,13 @@ export default function MeusJogos() {
             </div>
           </div>
         </Card>
+      )}
+
+      {desempenho.linhas.length > 0 && (
+        <>
+          <DistribuicaoAcertos linhas={desempenho.linhas} cfg={cfg} />
+          <DesempenhoEstrategias dados={desempenho} cfg={cfg} code={code} />
+        </>
       )}
 
       {grupos.length === 0 ? (

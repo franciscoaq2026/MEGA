@@ -31,6 +31,8 @@ export const LOTERIAS = {
     barClass: 'bg-emerald-500',
     rowClass: 'bg-emerald-50/50',
     tintClass: 'bg-emerald-50 border-emerald-200',
+    // Primeira coluna da distribuição de acertos em Meus jogos.
+    acertosDesde: 0,
     // Faixas premiadas: acertos -> rótulo do prêmio
     premios: [
       { ac: 6, label: 'Sena' },
@@ -63,6 +65,10 @@ export const LOTERIAS = {
     barClass: 'bg-purple-500',
     rowClass: 'bg-purple-50/50',
     tintClass: 'bg-purple-50 border-purple-200',
+    // Com 15 dezenas, 5 a 7 acertos somam ~10% dos jogos e nunca pagam: uma
+    // coluna "≤7" no lugar de oito colunas quase vazias (0 a 7) mantém a
+    // tabela de distribuição legível no celular.
+    acertosDesde: 7,
     // 11, 12 e 13 acertos têm prêmio FIXO — não dependem do rateio.
     premios: [
       { ac: 15, label: '15 acertos' },

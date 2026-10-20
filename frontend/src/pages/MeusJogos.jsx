@@ -113,6 +113,85 @@ function BarraIC({ linha, escala }) {
   )
 }
 
+// Esperado com poucas casas: "0,9" diz mais que "0,94", e o que é quase
+// impossível vira "~0" em vez de uma fila de zeros.
+const espTxt = (v) => (v < 0.05 ? '~0' : num(v, v < 10 ? 1 : 0))
+
+/* Quantos jogos de cada estratégia fizeram 0, 1, 2… acertos. É o que a média
+   esconde: muitos jogos de 1 acerto e um jogo de 3 podem dar a mesma média,
+   mas só o segundo chega perto do prêmio. Embaixo de cada contagem, quantos
+   jogos o acaso daria — sem isso, "1 jogo com 3 acertos" não diz se foi bom. */
+function DistribuicaoAcertos({ linhas, cfg }) {
+  const desde = cfg.acertosDesde ?? 0
+  const colunas = []
+  for (let h = desde; h <= cfg.sorteadas; h++) colunas.push(h)
+  // A primeira coluna junta tudo até `desde` (na Lotofácil, "≤7").
+  const valor = (arr, h) => (h === desde ? arr.slice(0, h + 1).reduce((s, v) => s + v, 0) : arr[h])
+  const premiadas = new Set(cfg.premios.map((p) => p.ac))
+  return (
+    <Card
+      title={`Quantos números cada jogo acertou — ${cfg.nome}`}
+      subtitle="Nº de jogos de cada estratégia por quantidade de acertos · embaixo, em cinza, quantos o acaso daria para a mesma quantidade de jogos"
+    >
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-xs sm:text-sm">
+          <thead>
+            <tr className="text-zinc-500 border-b border-zinc-200">
+              <th className="py-1.5 px-1 font-medium text-left sticky left-0 bg-white">
+                Acertos →
+              </th>
+              {colunas.map((h) => (
+                <th
+                  key={h}
+                  className={`py-1.5 px-1 font-semibold text-center tabular-nums ${
+                    premiadas.has(h) ? `${cfg.tintClass} border-x` : ''
+                  }`}
+                >
+                  {h === desde && desde > 0 ? `≤${h}` : h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.chave} className="border-b border-zinc-100 last:border-0">
+                <td className="py-1.5 px-1 sticky left-0 bg-white max-w-28 sm:max-w-none">
+                  <span className="block truncate" title={l.rotulo}>
+                    {l.rotulo}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">{l.jogos} jogos</span>
+                </td>
+                {colunas.map((h) => {
+                  const obs = valor(l.distrib, h)
+                  return (
+                    <td
+                      key={h}
+                      className={`py-1.5 px-1 text-center tabular-nums leading-tight ${
+                        premiadas.has(h) ? `${cfg.tintClass} border-x` : ''
+                      }`}
+                    >
+                      <span className={obs ? 'font-semibold' : 'text-zinc-300'}>{obs}</span>
+                      <span className="block text-[10px] text-zinc-400">
+                        {espTxt(valor(l.distribEsperada, h))}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-zinc-500 mt-3 leading-relaxed">
+        Colunas coloridas são as faixas que pagam prêmio. Compare a contagem com o número cinza:
+        se uma estratégia tivesse jeito de acertar mais, os jogos dela iriam se acumulando à
+        direita do esperado, concurso após concurso. Um jogo isolado numa coluna rara (o cinza
+        perto de zero) é sorte daquele sorteio. Com mais jogos, as contagens tendem ao cinza.
+      </p>
+    </Card>
+  )
+}
+
 function DesempenhoEstrategias({ dados, cfg, code }) {
   const { linhas, avaliadas } = dados
   const escala = Math.max(...linhas.flatMap((l) => l.ic.map(Math.abs)), 0.1)
@@ -437,7 +516,7 @@ export default function MeusJogos() {
 
   // `bets` só contém jogos da loteria aberta (cada uma tem sua chave no
   // navegador e na nuvem), então Mega e Lotofácil nunca se misturam aqui.
-  const desempenho = useMemo(() => desempenhoPorEstrategia(bets, checks), [bets, checks])
+  const desempenho = useMemo(() => desempenhoPorEstrategia(bets, checks, cfg), [bets, checks, cfg])
 
   return (
     <div className="space-y-4">
@@ -701,7 +780,10 @@ export default function MeusJogos() {
       )}
 
       {desempenho.linhas.length > 0 && (
-        <DesempenhoEstrategias dados={desempenho} cfg={cfg} code={code} />
+        <>
+          <DistribuicaoAcertos linhas={desempenho.linhas} cfg={cfg} />
+          <DesempenhoEstrategias dados={desempenho} cfg={cfg} code={code} />
+        </>
       )}
 
       {grupos.length === 0 ? (

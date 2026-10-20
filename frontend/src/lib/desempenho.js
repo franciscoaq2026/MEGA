@@ -83,17 +83,44 @@ export function zCritico(k) {
   return probitSuperior(1 - 0.025 / Math.max(1, k))
 }
 
-/* Recebe os jogos e o mapa bet.id -> conferência; devolve uma linha por
-   estratégia com média, esperado, diferença ± intervalo, prêmios e veredito.
+function comb(n, k) {
+  if (k < 0 || k > n) return 0
+  let r = 1
+  for (let i = 1; i <= k; i++) r = (r * (n - k + i)) / i
+  return r
+}
+
+// P(acertar h) para um jogo de k dezenas: hipergeométrica. Cacheada por k —
+// a mesma tabela serve a todos os jogos do mesmo tamanho.
+const cacheProb = new Map()
+function probAcertos(k, cfg) {
+  const chave = `${cfg.code}:${k}`
+  if (!cacheProb.has(chave)) {
+    const total = comb(cfg.total, cfg.sorteadas)
+    const p = []
+    for (let h = 0; h <= cfg.sorteadas; h++) {
+      p.push((comb(k, h) * comb(cfg.total - k, cfg.sorteadas - h)) / total)
+    }
+    cacheProb.set(chave, p)
+  }
+  return cacheProb.get(chave)
+}
+
+/* Recebe os jogos, o mapa bet.id -> conferência e a config da loteria;
+   devolve uma linha por estratégia com média, esperado, diferença ±
+   intervalo, prêmios, veredito e a distribuição de acertos (quantos jogos
+   fizeram 0, 1, 2… acertos, e quantos o acaso daria). A média sozinha
+   esconde o que paga prêmio: 85 jogos de 1 acerto empatam com poucos jogos
+   de 3, e só o segundo caso chega perto da quadra.
    Só entram jogos já conferidos e com a avaliação do backend. */
-export function desempenhoPorEstrategia(bets, checks) {
+export function desempenhoPorEstrategia(bets, checks, cfg) {
   const grupos = new Map()
   for (const bet of bets) {
     const c = checks[bet.id]
     if (!c?.encontrado || !c.avaliacao) continue
     const chave = chaveDe(bet)
     if (!grupos.has(chave)) grupos.set(chave, [])
-    grupos.get(chave).push({ concurso: bet.concurso, c })
+    grupos.get(chave).push({ concurso: bet.concurso, dezenas: bet.dezenas.length, c })
   }
 
   const linhas = []
@@ -105,7 +132,13 @@ export function desempenhoPorEstrategia(bets, checks) {
     let premiados = 0
     let premiadosEsp = 0
     let melhor = 0
-    for (const { c } of itens) {
+    const distrib = Array(cfg.sorteadas + 1).fill(0)
+    const distribEsperada = Array(cfg.sorteadas + 1).fill(0)
+    for (const { dezenas, c } of itens) {
+      distrib[c.acertos]++
+      probAcertos(dezenas, cfg).forEach((p, h) => {
+        distribEsperada[h] += p
+      })
       somaAc += c.acertos
       somaEsp += c.avaliacao.esperado
       somaVar += c.avaliacao.desvio ** 2
@@ -142,6 +175,8 @@ export function desempenhoPorEstrategia(bets, checks) {
       premiados,
       premiadosEsperados: premiadosEsp,
       melhor,
+      distrib,
+      distribEsperada,
     })
   }
 

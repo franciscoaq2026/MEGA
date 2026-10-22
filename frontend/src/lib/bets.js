@@ -96,7 +96,14 @@ export async function syncBets(loteria = 'mega') {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ bets: local }),
   })
-  if (!res.ok) throw new Error(`sync falhou (${res.status})`)
+  if (!res.ok) {
+    // O status vai junto: 401 = sessão que o servidor não reconhece mais, e a
+    // tela precisa saber disso para pedir login de novo em vez de seguir
+    // dizendo "conectado" enquanto nada sobe para a nuvem.
+    const err = new Error(`sync falhou (${res.status})`)
+    err.status = res.status
+    throw err
+  }
   const data = await res.json()
   const cloud = Array.isArray(data.bets) ? data.bets : []
   saveBets(loteria, cloud)

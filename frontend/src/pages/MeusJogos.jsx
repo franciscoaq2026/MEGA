@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
 import { addBet, exportBets, importBets, loadBets, removeBet, syncBets } from '../lib/bets.js'
-import { getSession, logout, requestLink } from '../lib/auth.js'
+import { clearSession, extrairToken, getSession, logout, requestLink, verifyToken } from '../lib/auth.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
@@ -368,15 +368,38 @@ export default function MeusJogos() {
   const [session, setSession] = useState(getSession())
   const [emailInput, setEmailInput] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
+  const [linkColado, setLinkColado] = useState('')
+  // Resultado da última sincronização: { ok: true, n } ou { ok: false, texto }.
+  // Antes a falha era engolida e a tela seguia dizendo "conectado" enquanto
+  // nada chegava à nuvem — o celular abria vazio sem nenhum aviso.
+  const [sync, setSync] = useState(null)
   const fileRef = useRef(null)
 
   const refresh = useCallback(async () => {
     if (getSession()) {
       try {
-        await syncBets(code) // traz jogos de outros aparelhos e migra os locais
-      } catch {
-        // sem rede/sessão expirada: segue com o que está no navegador
+        const nuvem = await syncBets(code) // traz jogos de outros aparelhos e migra os locais
+        setSync({ ok: true, n: nuvem.length })
+      } catch (e) {
+        if (e.status === 401) {
+          // O servidor não reconhece mais a sessão (expirou ou o banco a
+          // perdeu). Sair de verdade, para o formulário de login aparecer.
+          clearSession()
+          setSession(null)
+          setSync({
+            ok: false,
+            texto:
+              'Sua sessão não vale mais no servidor, então os jogos deste aparelho não estavam indo para a nuvem. Entre de novo abaixo: os jogos salvos aqui sobem para a conta assim que você entrar.',
+          })
+        } else {
+          setSync({
+            ok: false,
+            texto: `Não foi possível sincronizar com a nuvem (${e.message || 'sem rede'}). Os jogos deste aparelho continuam salvos aqui e sobem na próxima sincronização.`,
+          })
+        }
       }
+    } else {
+      setSync(null)
     }
     const list = loadBets(code)
     setBets(list)
@@ -462,6 +485,31 @@ export default function MeusJogos() {
       }
     } catch {
       setMessage({ type: 'error', text: 'Falha de rede ao pedir o link.' })
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function entrarComLink(e) {
+    e.preventDefault()
+    const token = extrairToken(linkColado)
+    if (!token) {
+      setMessage({ type: 'error', text: 'Isso não parece o link de acesso. Cole o link inteiro do e-mail.' })
+      return
+    }
+    setAuthBusy(true)
+    try {
+      const r = await verifyToken(token)
+      if (r.status === 'success') {
+        setSession(getSession())
+        setLinkColado('')
+        setMessage({ type: 'ok', text: `Conectado como ${r.email}.` })
+        refresh()
+      } else {
+        setMessage({ type: 'error', text: r.message || 'Link inválido. Peça um novo.' })
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Falha de rede ao validar o link.' })
     } finally {
       setAuthBusy(false)
     }
@@ -557,8 +605,10 @@ export default function MeusJogos() {
         {session ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-zinc-600">
-              Conectado como <strong>{session.email}</strong>. Os jogos sincronizam
-              automaticamente.
+              Conectado como <strong>{session.email}</strong>.{' '}
+              {sync?.ok
+                ? `${sync.n} jogo(s) da ${cfg.nome} na sua conta.`
+                : 'Os jogos sincronizam automaticamente.'}
             </p>
             <button
               onClick={sair}
@@ -591,6 +641,43 @@ export default function MeusJogos() {
               neste navegador são enviados para a sua conta (nada é perdido).
             </p>
           </form>
+        )}
+        {!session && (
+          <form onSubmit={entrarComLink} className="mt-3 pt-3 border-t border-zinc-100 space-y-2">
+            <p className="text-[11px] text-zinc-500">
+              <strong>No celular:</strong> o link do e-mail costuma abrir dentro do app de e-mail,
+              e o login fica preso lá. Em vez de tocar no botão, toque e segure, escolha{' '}
+              <em>Copiar link</em> e cole aqui:
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={linkColado}
+                onChange={(e) => setLinkColado(e.target.value)}
+                placeholder="cole o link de acesso"
+                className="flex-1 border border-zinc-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={authBusy || !linkColado.trim()}
+                className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50"
+              >
+                Entrar com o link
+              </button>
+            </div>
+          </form>
+        )}
+        {sync && !sync.ok && (
+          <p className="mt-3 text-sm rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-800">
+            {sync.texto}
+          </p>
+        )}
+        {session && status?.db_backend === 'sqlite' && !['localhost', '127.0.0.1'].includes(window.location.hostname) && (
+          <p className="mt-3 text-sm rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-800">
+            O servidor está sem banco de dados persistente (Turso não configurado): o login e os
+            jogos na nuvem se perdem a cada reinício. Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN
+            na Vercel.
+          </p>
         )}
       </Card>
 

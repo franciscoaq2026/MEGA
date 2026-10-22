@@ -49,6 +49,18 @@ export async function verifyToken(token) {
   return data
 }
 
+// Aceita o link do e-mail colado inteiro (…?login_token=XXXX) ou só o token.
+// No celular o link costuma abrir no navegador interno do app de e-mail, que
+// tem armazenamento próprio: a sessão ficava lá e o navegador onde o usuário
+// usa o app continuava deslogado — e o token, de uso único, já estava gasto.
+// Copiar o link (sem abri-lo) e colar aqui entra no navegador certo.
+export function extrairToken(texto) {
+  const t = (texto || '').trim()
+  const daUrl = t.match(/login_token=([0-9a-f]{32})/i)
+  if (daUrl) return daUrl[1].toUpperCase()
+  return /^[0-9a-f]{32}$/i.test(t) ? t.toUpperCase() : null
+}
+
 export async function logout() {
   const s = getSession()
   clearSession()

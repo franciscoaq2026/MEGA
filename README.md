@@ -48,8 +48,8 @@ npm run dev
 ```
 
 Abra <http://localhost:5173> — o Vite encaminha `/api` para o backend.
-No primeiro uso, vá em **Sorteios → Sincronizar sorteios** para baixar o
-histórico completo (só baixa o que falta nas próximas vezes).
+No primeiro uso o app carrega o histórico sozinho (ou vá em **Sorteios →
+Sincronizar sorteios**); depois, só baixa o que falta.
 
 ### Testes do backend
 
@@ -67,9 +67,12 @@ O slug da loteria (`megasena`, `lotofacil`) entra na URL das três fontes:
    `https://servicebus2.caixa.gov.br/portaldeloterias/api/{slug}[/{concurso}]`
 2. **Fallback automático**: `https://api.guidi.dev.br/loteria/{slug}/...`
    (se a Caixa falhar, o app passa a usar o fallback na mesma sincronização)
-3. **Espelho estático no GitHub** (`maickon/free-apiloterias`) — a única fonte
-   que responde a partir de um datacenter, já que Caixa e guidi bloqueiam IPs
-   que não sejam residenciais. Cobre as duas modalidades.
+3. **Espelhos no GitHub** — `eitchtee/loterias.json` (Mega e Lotofácil) e
+   `rjaugusto/lotofacil-dados` (Lotofácil), atualizados todo dia a partir da
+   Caixa. São a fonte do servidor, já que a Caixa recusa o Vercel e a guidi
+   só aceita IPs do Brasil; um cron diário da Vercel (`/api/cron/sync`)
+   mantém o banco em dia. Caixa e guidi entram pelo navegador do usuário,
+   logado, ao abrir o app.
 4. **Plano C — importar CSV** (botão na tela Sorteios): arquivo com colunas
    `concurso, data, dezena1..dezenaN`, separado por `,` ou `;`, com ou sem
    cabeçalho, datas em `dd/mm/aaaa` ou `aaaa-mm-dd`. `N` é o que a loteria
@@ -189,8 +192,9 @@ servidor nem se perdem em deploys.
    `/api/*` para o FastAPI. Confira em `/api/status` que `db_backend` é
    `turso`.
 
-Depois disso o app já abre com todo o histórico, e o botão “Sincronizar”
-só busca os concursos novos.
+Depois disso o app já abre com todo o histórico; o cron diário e a
+sincronização ao abrir o app só buscam os concursos novos. Opcional: defina
+`CRON_SECRET` para que só a Vercel chame o `/api/cron/sync`.
 
 ## Estrutura
 
@@ -200,7 +204,7 @@ backend/
     lotteries.py   # registro das loterias — parametriza todo o resto
     main.py        # FastAPI, CORS, montagem das rotas (com e sem /api)
     db.py          # SQLite/Turso (cache de sorteios + meta + apostas)
-    fetcher.py     # API da Caixa + fallback guidi + espelho GitHub
+    fetcher.py     # espelhos GitHub (servidor) + Caixa/guidi (seed_turso)
     csv_utils.py   # parser de CSV (importação e seed)
     stats.py       # estatísticas puras (frequência, atraso, soma, raio-x…)
     analysis.py    # indicadores de um jogo + faixas típicas + termômetro

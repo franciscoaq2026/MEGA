@@ -1,94 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiGet, apiPost, apiUpload } from '../lib/api.js'
+import { apiGet, apiUpload } from '../lib/api.js'
 import { BallRow } from '../components/Ball.jsx'
 import { formatDate } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
+import { EVENTO_SORTEIOS, sincronizarSorteios } from '../lib/sincronizar.js'
 
 const PAGE = 24
-
-// Fontes oficiais acessadas DIRETO do navegador do usuário. A Caixa/guidi
-// bloqueiam IPs de datacenter (o servidor no Vercel), mas não o IP residencial
-// de quem usa o site — então os concursos mais novos entram por aqui.
-// As URLs dependem do "slug" da loteria (megasena, lotofacil, ...).
-function fontesDiretas(fonte) {
-  return [
-    {
-      nome: 'Caixa',
-      url: (n) =>
-        n
-          ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/${fonte}/${n}`
-          : `https://servicebus2.caixa.gov.br/portaldeloterias/api/${fonte}`,
-    },
-    {
-      nome: 'guidi',
-      url: (n) =>
-        n
-          ? `https://api.guidi.dev.br/loteria/${fonte}/${n}`
-          : `https://api.guidi.dev.br/loteria/${fonte}/ultimo`,
-    },
-  ]
-}
-
-async function fetchDireto(url) {
-  const ctl = new AbortController()
-  const t = setTimeout(() => ctl.abort(), 12000)
-  try {
-    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } finally {
-    clearTimeout(t)
-  }
-}
-
-// Busca do navegador os concursos que faltam depois do último salvo e envia
-// os payloads brutos ao backend (/import-payloads), que valida e grava.
-async function sincronizarPeloNavegador(ultimoLocal, apiPostFn, onProgress, fontes) {
-  for (const fonte of fontes) {
-    try {
-      const ultimo = await fetchDireto(fonte.url())
-      const numUltimo = Number(ultimo.numero ?? ultimo.concurso)
-      if (!Number.isFinite(numUltimo) || numUltimo <= ultimoLocal) {
-        // Já estamos em dia — mas reenvia o último resultado assim mesmo, para
-        // o backend atualizar o "próximo concurso" (data e prêmio estimado
-        // vêm no payload do último sorteio).
-        if (Number.isFinite(numUltimo)) {
-          try {
-            await apiPostFn('/import-payloads', { payloads: [ultimo] })
-          } catch {
-            // sem problema: só a atualização do "próximo" não aconteceu
-          }
-        }
-        return { fonte: fonte.nome, enviados: 0, atualRemoto: numUltimo || ultimoLocal }
-      }
-      const faltando = []
-      for (let n = ultimoLocal + 1; n < numUltimo; n++) faltando.push(n)
-      const alvoTotal = faltando.length + 1
-
-      let payloads = [ultimo]
-      let enviados = 0
-      const flush = async () => {
-        if (!payloads.length) return
-        const r = await apiPostFn('/import-payloads', { payloads })
-        enviados += r.added
-        payloads = []
-        onProgress(enviados, alvoTotal)
-      }
-
-      for (let i = 0; i < faltando.length; i += 10) {
-        const lote = faltando.slice(i, i + 10)
-        const res = await Promise.allSettled(lote.map((n) => fetchDireto(fonte.url(n))))
-        payloads.push(...res.filter((r) => r.status === 'fulfilled').map((r) => r.value))
-        if (payloads.length >= 25) await flush()
-      }
-      await flush()
-      return { fonte: fonte.nome, enviados, atualRemoto: numUltimo }
-    } catch {
-      // CORS ou rede: tenta a próxima fonte; se todas falharem, retorna null
-    }
-  }
-  return null
-}
 
 export default function Sorteios() {
   const { cfg } = useLottery()
@@ -117,59 +34,36 @@ export default function Sorteios() {
     setTotal(dr.total)
   }
 
+  // A sincronização em segundo plano (ao abrir o app) avisa quando grava algo.
+  useEffect(() => {
+    const atualizar = () => reload().catch(() => {})
+    window.addEventListener(EVENTO_SORTEIOS, atualizar)
+    return () => window.removeEventListener(EVENTO_SORTEIOS, atualizar)
+  }, [reload])
+
   async function syncAll() {
     setBusy(true)
     setMessage(null)
-    let added = 0
     try {
-      // Fase 1 — servidor: seed embutido + espelhos (rápido, cobre o histórico)
-      // O laço para em três situações: acabou (remaining 0), o lote não gravou
-      // nada (added 0 — sem progresso, repetir só repetiria o mesmo pedido, e
-      // antes isso era um laço infinito batendo no servidor) ou o teto de
-      // rodadas, que é folga sobre o maior histórico (3.657 ÷ 200 = 19 lotes).
-      let travou = false
-      for (let volta = 0; volta < 60; volta++) {
-        const r = await apiPost('/sync')
-        added += r.added
-        setSync({ added, remaining: r.remaining, fase: 'servidor' })
-        if (r.remaining <= 0) break
-        if (r.added === 0) {
-          travou = true
-          break
-        }
-      }
-
-      // Fase 2 — navegador: busca na Caixa (pelo SEU IP, que não é bloqueado)
-      // os concursos mais novos que nenhuma fonte de servidor tem ainda
-      const st = await apiGet('/status')
-      const ultimoLocal = st.ultimo_local?.concurso ?? 0
-      let direto = null
-      if (ultimoLocal > 0) {
-        setSync({ added, remaining: 0, fase: 'navegador' })
-        direto = await sincronizarPeloNavegador(
-          ultimoLocal,
-          apiPost,
-          (env, alvo) =>
-            setSync({ added: added + env, remaining: Math.max(alvo - env, 0), fase: 'navegador' }),
-          fontesDiretas(cfg.fonte),
-        )
-      }
-
-      const totalNovo = added + (direto?.enviados ?? 0)
+      const r = await sincronizarSorteios(cfg, setSync)
+      const total = r.servidor + (r.direto?.enviados ?? 0)
       let texto
-      if (direto) {
+      if (r.direto) {
         texto =
-          direto.enviados > 0
-            ? `Sincronizado: ${totalNovo} concurso(s) novo(s) — ${direto.enviados} vindo(s) da ${direto.fonte} direto pelo seu navegador. Tudo atualizado até o concurso ${direto.atualRemoto}.`
-            : `Sincronizado: ${totalNovo} concurso(s) novo(s). Você já está no concurso mais recente (${direto.atualRemoto}).`
+          r.direto.enviados > 0
+            ? `Sincronizado: ${total} concurso(s) novo(s) — ${r.direto.enviados} vindo(s) da ${r.direto.fonte} direto pelo seu navegador. Tudo atualizado até o concurso ${r.direto.atualRemoto}.`
+            : `Sincronizado: ${total} concurso(s) novo(s). Você já está no concurso mais recente (${r.direto.atualRemoto}).`
+      } else if (r.semLogin) {
+        texto = `Sincronizado: ${total} concurso(s) novo(s), dos espelhos do servidor (atualizados uma vez por dia). Para trazer o resultado mais recente direto da Caixa, entre na sua conta em Meus jogos.`
       } else {
-        texto = `Sincronizado: ${totalNovo} concurso(s) novo(s). Não consegui consultar a Caixa pelo navegador (rede/CORS) — os dados vão até o espelho mais recente disponível.`
+        texto = `Sincronizado: ${total} concurso(s) novo(s), dos espelhos do servidor. Não consegui consultar a Caixa pelo navegador (rede/CORS) — o resultado mais recente entra quando os espelhos forem atualizados.`
       }
+      if (r.avisos.length) texto += ` Aviso: ${r.avisos[0]}.`
       // O laço do servidor parou sem gravar nada: ainda faltam concursos que
       // nenhuma fonte entregou. Avisar é melhor do que ficar repetindo o mesmo
       // pedido — e o CSV continua sendo a saída.
       setMessage(
-        travou
+        r.travou
           ? {
               type: 'error',
               text: `${texto} Ainda faltam concursos que nenhuma fonte entregou — tente de novo mais tarde ou importe um CSV abaixo.`,
@@ -180,7 +74,7 @@ export default function Sorteios() {
     } catch (e) {
       setMessage({
         type: 'error',
-        text: `${e.message} — se as APIs estiverem fora do ar, use a importação de CSV abaixo.`,
+        text: `${e.message} — se as fontes estiverem fora do ar, use a importação de CSV abaixo.`,
       })
     } finally {
       setBusy(false)
@@ -265,12 +159,14 @@ export default function Sorteios() {
         <div className="bg-white border border-zinc-200 rounded-xl p-5 text-sm text-zinc-600 space-y-2">
           <p className="font-medium text-zinc-800">Como carregar o histórico</p>
           <p>
-            1. <strong>Sincronizar sorteios</strong> busca tudo da API da Caixa (com fallback
-            automático) e guarda no cache local — só baixa o que falta.
+            1. <strong>Sincronizar sorteios</strong> carrega o histórico embutido no app e os
+            espelhos públicos no GitHub (atualizados todo dia a partir da Caixa) e, se você
+            estiver logado, busca direto na Caixa, pelo seu navegador, o resultado mais recente.
+            Só baixa o que falta — e o app faz isso sozinho quando é aberto.
           </p>
           <p>
-            2. Se as duas APIs estiverem fora do ar, <strong>Importar CSV</strong> aceita um
-            arquivo com colunas{' '}
+            2. Se as fontes estiverem fora do ar, <strong>Importar CSV</strong> (precisa estar
+            logado) aceita um arquivo com colunas{' '}
             <code className="bg-zinc-100 px-1 rounded">
               concurso, data, dezena1..dezena{cfg.sorteadas}
             </code>{' '}

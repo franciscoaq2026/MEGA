@@ -95,7 +95,8 @@ SCHEMA = (
         estrategia TEXT,
         dezenas TEXT NOT NULL,
         criado_em TEXT NOT NULL,
-        espalhar INTEGER
+        espalhar INTEGER,
+        espalhar_deduzido INTEGER
     )
     """,
 )
@@ -222,6 +223,7 @@ def _purge_loterias_removidas() -> None:
 _BETS_COLUNAS_NOVAS = (
     ("loteria", "TEXT NOT NULL DEFAULT 'mega'"),  # suporte multi-loteria
     ("espalhar", "INTEGER"),  # 1/0 = ligado/desligado; NULL = não se aplica ou não registrado
+    ("espalhar_deduzido", "INTEGER"),  # 1 = valor veio do estudo, não da hora em que foi salvo
 )
 
 
@@ -242,10 +244,43 @@ def _ensure_bets_columns() -> None:
             print(f"[init_db] aviso ao migrar bets.{nome}: {exc}")
 
 
+# Status do Espalhar dos jogos salvos antes de o campo existir, deduzido pela
+# sobreposição das dezenas dentro de cada lote (estudo de 23/10/2026).
+BACKFILL_ESPALHAR = DATA_DIR / "espalhar_deduzido.json"
+
+
+def _backfill_espalhar() -> None:
+    """Grava, uma única vez por versão do arquivo, o Espalhar deduzido dos
+    jogos antigos. Só preenche jogos ainda sem o campo: o que foi gravado na
+    hora nunca é sobrescrito."""
+    if not BACKFILL_ESPALHAR.exists():
+        return
+    try:
+        dados = json.loads(BACKFILL_ESPALHAR.read_text(encoding="utf-8"))
+        chave = f"backfill_espalhar:{dados.get('versao', 1)}"
+        if get_meta(chave):
+            return
+        jogos = dados["jogos"]
+        _write(
+            [
+                (
+                    "UPDATE bets SET espalhar = ?, espalhar_deduzido = ? "
+                    "WHERE id = ? AND espalhar IS NULL",
+                    (int(bool(j["espalhar"])), int(bool(j["deduzido"])), j["id"]),
+                )
+                for j in jogos
+            ]
+        )
+        set_meta(chave, {"jogos": len(jogos)})
+    except Exception as exc:  # noqa: BLE001 - não derruba o init
+        print(f"[init_db] aviso no backfill do espalhar: {exc}")
+
+
 def init_db() -> None:
     _write([(stmt, ()) for stmt in SCHEMA])
     _migrate_legacy_draws()
     _ensure_bets_columns()
+    _backfill_espalhar()
     _purge_loterias_removidas()
     # Auto-carrega o seed apenas no SQLite local (desenvolvimento). No Turso o
     # carregamento é feito em lotes pelo endpoint /sync, para não estourar o
@@ -401,10 +436,23 @@ def delete_session(session_id: str) -> None:
 
 # ---- Apostas sincronizadas (por conta e loteria) ----
 
+# Upsert por id. O Espalhar usa COALESCE: um aparelho com a cópia antiga do
+# jogo (sem o campo) reenvia null a cada sync, e isso não pode apagar o valor
+# que o servidor já tem — gravado na hora ou preenchido pelo estudo. O WHERE
+# impede que um id de outra conta sobrescreva o jogo.
 _BET_INSERT = (
-    "INSERT OR REPLACE INTO bets "
-    "(id, account_id, loteria, concurso, origem, estrategia, dezenas, criado_em, espalhar) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO bets "
+    "(id, account_id, loteria, concurso, origem, estrategia, dezenas, criado_em, "
+    "espalhar, espalhar_deduzido) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT(id) DO UPDATE SET "
+    "loteria = excluded.loteria, concurso = excluded.concurso, origem = excluded.origem, "
+    "estrategia = excluded.estrategia, dezenas = excluded.dezenas, "
+    "criado_em = excluded.criado_em, "
+    "espalhar = COALESCE(excluded.espalhar, bets.espalhar), "
+    "espalhar_deduzido = CASE WHEN excluded.espalhar IS NULL "
+    "THEN bets.espalhar_deduzido ELSE excluded.espalhar_deduzido END "
+    "WHERE bets.account_id = excluded.account_id"
 )
 
 
@@ -419,6 +467,7 @@ def _bet_params(account_id: str, bet: dict) -> tuple:
         json.dumps(sorted(int(d) for d in bet["dezenas"])),
         bet.get("criado_em") or "",
         None if bet.get("espalhar") is None else int(bool(bet["espalhar"])),
+        None if bet.get("espalhar") is None else int(bool(bet.get("espalhar_deduzido"))),
     )
 
 
@@ -441,6 +490,7 @@ def list_bets(account_id: str, loteria: str | None = None) -> list[dict]:
         r.setdefault("loteria", "mega")
         esp = r.get("espalhar")
         r["espalhar"] = None if esp is None else bool(esp)
+        r["espalhar_deduzido"] = None if esp is None else bool(r.get("espalhar_deduzido"))
     return rows
 
 

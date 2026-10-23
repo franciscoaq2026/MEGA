@@ -124,8 +124,10 @@ def test_espalhar_gravado_por_jogo():
             json={"bets": [{**base, "id": "e4", "espalhar": False, "dezenas": [19, 20, 21, 22, 23, 24]}]},
             headers=h,
         )
-        por_id = {b["id"]: b["espalhar"] for b in c.get("/api/bets", headers=h).json()["bets"]}
-        assert (por_id["e1"], por_id["e2"], por_id["e3"], por_id["e4"]) == (True, False, None, False)
+        bets = {b["id"]: b for b in c.get("/api/bets", headers=h).json()["bets"]}
+        assert [bets[i]["espalhar"] for i in ("e1", "e2", "e3", "e4")] == [True, False, None, False]
+        # gravado na hora = não deduzido; sem valor = sem marcação
+        assert [bets[i]["espalhar_deduzido"] for i in ("e1", "e2", "e3", "e4")] == [False, False, None, False]
 
 
 def test_migracao_adiciona_coluna_espalhar(tmp_path, monkeypatch):
@@ -153,3 +155,48 @@ def test_migracao_adiciona_coluna_espalhar(tmp_path, monkeypatch):
     assert db.list_bets("owner")[0]["espalhar"] is None
     db.upsert_bet("owner", {"id": "novo", "concurso": 3001, "origem": "app", "dezenas": [1, 2, 3, 4, 5, 6], "espalhar": True})
     assert {b["id"]: b["espalhar"] for b in db.list_bets("owner")} == {"velho": None, "novo": True}
+
+
+def test_backfill_espalhar_e_sync_nao_apaga(tmp_path, monkeypatch):
+    """O estudo preenche só jogos sem o campo, uma vez por versão; e um
+    aparelho que reenvia a cópia antiga (sem o campo) não apaga o valor."""
+    import json
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "bf.db"))
+    db.init_db()
+    base = {"concurso": 3000, "origem": "app", "estrategia": "aleatorio", "dezenas": [1, 2, 3, 4, 5, 6]}
+    db.upsert_bets(
+        "owner",
+        [dict(base, id="velho1"), dict(base, id="velho2"), dict(base, id="gravado", espalhar=False)],
+    )
+    arquivo = tmp_path / "espalhar_deduzido.json"
+    arquivo.write_text(
+        json.dumps(
+            {
+                "versao": 7,
+                "jogos": [
+                    {"id": "velho1", "espalhar": True, "deduzido": True},
+                    {"id": "gravado", "espalhar": True, "deduzido": True},  # já tinha valor: fica
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(db, "BACKFILL_ESPALHAR", arquivo)
+    db.init_db()
+
+    def estado():
+        return {b["id"]: (b["espalhar"], b["espalhar_deduzido"]) for b in db.list_bets("owner")}
+
+    assert estado() == {"velho1": (True, True), "velho2": (None, None), "gravado": (False, False)}
+    assert db.get_meta("backfill_espalhar:7") == {"jogos": 2}
+
+    # o celular reenvia a cópia antiga no sync: o valor deduzido continua
+    db.upsert_bets("owner", [dict(base, id="velho1")])
+    assert estado()["velho1"] == (True, True)
+    # um valor gravado de verdade substitui o deduzido
+    db.upsert_bets("owner", [dict(base, id="velho1", espalhar=False)])
+    assert estado()["velho1"] == (False, False)
+
+    # outra conta não sobrescreve o jogo de mesmo id
+    db.upsert_bets("intruso", [dict(base, id="gravado", concurso=1)])
+    assert [b["concurso"] for b in db.list_bets("owner") if b["id"] == "gravado"] == [3000]

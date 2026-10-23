@@ -195,7 +195,7 @@ def test_check_lotofacil_dez_acertos_nao_premia():
         assert res["acertos"] == 10 and res["faixa"] is None
 
 
-def test_import_payloads_lotofacil():
+def test_import_payloads_lotofacil(sessao):
     with make_client() as c:
         payload = {
             "numero": 995500,
@@ -203,14 +203,14 @@ def test_import_payloads_lotofacil():
             "dataApuracao": "10/02/2026",
             "numeroConcursoProximo": 995501,
         }
-        r = c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]})
+        r = c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]}, headers=sessao)
         assert r.status_code == 200, r.text
         assert r.json()["added"] == 1
         got = db.get_draw(995500, "lofa")
         assert got is not None and got["dezenas"] == LOFA_15
 
 
-def test_import_payload_recusa_dezenas_invalidas():
+def test_import_payload_recusa_dezenas_invalidas(sessao):
     """Um payload de outra loteria (20 dezenas até 99) não entra como Lotofácil."""
     with make_client() as c:
         payload = {
@@ -218,7 +218,7 @@ def test_import_payload_recusa_dezenas_invalidas():
             "listaDezenas": [f"{n:02d}" for n in range(0, 20)],
             "dataApuracao": "10/02/2026",
         }
-        r = c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]})
+        r = c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]}, headers=sessao)
         assert r.status_code == 400
 
 
@@ -599,7 +599,7 @@ def test_proximo_nao_fica_defasado():
         assert st["proximo"]["data"] is None
 
 
-def test_reenviar_ultimo_atualiza_proximo():
+def test_reenviar_ultimo_atualiza_proximo(sessao):
     with make_client() as c:
         cc = 999100
         db.upsert_draws([{"concurso": cc, "data": "2026-06-01", "dezenas": LOFA_15}], "lofa")
@@ -613,7 +613,7 @@ def test_reenviar_ultimo_atualiza_proximo():
             "dataProximoConcurso": "03/06/2026",
             "valorEstimadoProximoConcurso": 5000000,
         }
-        c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]})
+        c.post("/api/import-payloads?loteria=lofa", json={"payloads": [payload]}, headers=sessao)
         st = c.get("/api/status?loteria=lofa").json()
         assert st["proximo"]["concurso"] == cc + 1
         assert st["proximo"]["data"] == "2026-06-03"
@@ -662,11 +662,12 @@ def test_csv_de_uma_loteria_nao_entra_truncado_na_outra():
     assert len(errors) == 1
 
 
-def test_import_csv_respeita_a_loteria_da_query():
+def test_import_csv_respeita_a_loteria_da_query(sessao):
     with TestClient(app) as c:
         r = c.post(
             "/api/import-csv?loteria=lofa",
             files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+            headers=sessao,
         )
         assert r.status_code == 200
         assert r.json()["imported"] == 1
@@ -676,6 +677,7 @@ def test_import_csv_respeita_a_loteria_da_query():
         r = c.post(
             "/api/import-csv?loteria=mega",
             files={"file": ("lofa.csv", LOFA_CSV, "text/csv")},
+            headers=sessao,
         )
         assert r.status_code == 400
 

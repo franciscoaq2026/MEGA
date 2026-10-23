@@ -1,12 +1,16 @@
+import asyncio
 import os
 import tempfile
 
 os.environ["MEGASENA_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["MEGASENA_AUTOSEED"] = "0"  # testes começam com banco vazio
 
+import httpx  # noqa: E402
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import db  # noqa: E402
+from app import db, fetcher  # noqa: E402
+from app.fetcher import FetchError, ler_espelho  # noqa: E402
 from app.main import app  # noqa: E402
 
 CSV = """concurso;data;dezena1;dezena2;dezena3;dezena4;dezena5;dezena6
@@ -27,9 +31,9 @@ def test_health():
         assert c.get("/health").status_code == 200  # sem prefixo (Vercel)
 
 
-def test_import_csv_and_listing():
+def test_import_csv_and_listing(sessao):
     with make_client() as c:
-        r = c.post("/api/import-csv", files={"file": ("dados.csv", CSV, "text/csv")})
+        r = c.post("/api/import-csv", files={"file": ("dados.csv", CSV, "text/csv")}, headers=sessao)
         assert r.status_code == 200
         body = r.json()
         assert body["imported"] == 3
@@ -48,48 +52,163 @@ def test_import_csv_and_listing():
 
 
 def test_sync_incremental(monkeypatch):
-    """Simula o remoto com 5 concursos: o sync deve buscar só os que faltam."""
+    """Servidor: histórico embutido + espelhos. Só entra o que falta — o que
+    já está no banco (ex.: resultado oficial trazido pelo navegador) fica."""
     from app.routers import draws as draws_router
 
-    fake = {
-        n: {
-            "concurso": n,
-            "data": f"2024-01-0{n}",
-            "dezenas": sorted([n, n + 10, n + 20, n + 30, n + 40, n + 50]),
-            "proximo": {"concurso": 6, "data": "2024-02-01", "estimativa": 1000000, "acumulado": True},
-        }
+    espelho = [
+        {"concurso": n, "data": f"2024-01-0{n}", "dezenas": sorted([n, n + 10, n + 20, n + 30, n + 40, n + 50])}
         for n in range(1, 6)
-    }
+    ]
 
-    async def fake_latest(loteria="mega"):
-        return fake[5]
+    async def fake_espelhos(loteria="mega"):
+        return espelho, []
 
-    async def fake_many(nums, loteria="mega", concurrency=8):
-        return [fake[n] for n in nums], []
-
-    monkeypatch.setattr(draws_router, "fetch_latest", fake_latest)
-    monkeypatch.setattr(draws_router, "fetch_many", fake_many)
+    monkeypatch.setattr(draws_router, "fetch_espelhos", fake_espelhos)
+    monkeypatch.setattr(db, "load_bundled_seed", lambda loteria="mega": [])
 
     with make_client() as c:
-        before = db.count_draws()
+        # 1..3 entraram pelo CSV do teste anterior, com dezenas diferentes
+        antes = {n: db.get_draw(n)["dezenas"] for n in (1, 2, 3)}
         r = c.post("/api/sync")
         assert r.status_code == 200
         body = r.json()
-        assert body["latest_remote"] == 5
-        assert body["remaining"] == 0
+        assert (body["latest_remote"], body["added"], body["remaining"]) == (5, 2, 0)
         assert db.count_draws() == 5
-        assert db.count_draws() >= before
+        assert {n: db.get_draw(n)["dezenas"] for n in (1, 2, 3)} == antes
+        assert db.get_draw(5)["dezenas"] == espelho[4]["dezenas"]
 
-        # segunda chamada: nada novo a baixar
-        r = c.post("/api/sync")
-        assert r.json()["added"] == 0
+        # segunda chamada: nada novo
+        assert c.post("/api/sync").json()["added"] == 0
 
-        # status agora tem o "próximo concurso" vindo da API
-        st = c.get("/api/status").json()
-        assert st["proximo"]["concurso"] == 6
+        # sem data/prêmio do espelho, o "próximo" sai do último concurso
+        assert c.get("/api/status").json()["proximo"]["concurso"] == 6
 
 
-def test_import_payloads_formato_caixa():
+def test_sync_em_lotes_junta_seed_e_espelho(monkeypatch):
+    from app.routers import draws as draws_router
+
+    seed = [{"concurso": n, "data": "2025-01-01", "dezenas": [1, 2, 3, 4, 5, n % 50 + 7]} for n in range(800, 804)]
+    espelho = [{"concurso": n, "data": "2025-02-01", "dezenas": [1, 2, 3, 4, 5, 6]} for n in range(802, 806)]
+
+    async def fake_espelhos(loteria="mega"):
+        return espelho, ["espelho x: fora do ar"]
+
+    monkeypatch.setattr(draws_router, "fetch_espelhos", fake_espelhos)
+    monkeypatch.setattr(db, "load_bundled_seed", lambda loteria="mega": seed)
+    with make_client() as c:
+        r = c.post("/api/sync?max_batch=4").json()
+        assert (r["added"], r["remaining"], r["latest_remote"]) == (4, 2, 805)
+        assert r["errors"] == ["espelho x: fora do ar"]
+        r = c.post("/api/sync?max_batch=4").json()
+        assert (r["added"], r["remaining"]) == (2, 0)
+        # no concurso em comum, vale o histórico embutido
+        assert db.get_draw(802)["data"] == "2025-01-01"
+
+
+def test_cron_sync(monkeypatch):
+    from app.routers import draws as draws_router
+
+    async def fake_espelhos(loteria="mega"):
+        k = 6 if loteria == "mega" else 15
+        return [{"concurso": 2999, "data": "2026-10-01", "dezenas": list(range(1, k + 1))}], []
+
+    monkeypatch.setattr(draws_router, "fetch_espelhos", fake_espelhos)
+    monkeypatch.setattr(db, "load_bundled_seed", lambda loteria="mega": [])
+    monkeypatch.setenv("CRON_SECRET", "s3gredo")
+    with make_client() as c:
+        assert c.get("/api/cron/sync").status_code == 401
+        assert c.get("/api/cron/sync", headers={"Authorization": "Bearer errado"}).status_code == 401
+        r = c.get("/api/cron/sync", headers={"Authorization": "Bearer s3gredo"})
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body) == {"mega", "lofa"}
+        assert body["mega"]["added"] == 1 and body["lofa"]["added"] == 1
+        assert db.get_draw(2999, "mega") and db.get_draw(2999, "lofa")
+
+        # sem CRON_SECRET o endpoint fica aberto (só acrescenta o que falta)
+        monkeypatch.delenv("CRON_SECRET")
+        assert c.get("/api/cron/sync").json()["mega"]["added"] == 0
+
+
+def test_ler_espelho_formatos():
+    eitchtee = [
+        {"concurso": 7, "data": "20/10/2026", "resultado": ["02", "06", "09", "16", "31", "40"]},
+        {"concurso": 8, "data": "22/10/2026", "resultado": ["02", "06"]},  # incompleto
+    ]
+    sorteios, invalidos = ler_espelho(eitchtee, "mega")
+    assert sorteios == [{"concurso": 7, "data": "2026-10-20", "dezenas": [2, 6, 9, 16, 31, 40]}]
+    assert invalidos == 1
+
+    rjaugusto = {
+        "historico": [
+            {
+                "numero": 3810,
+                "dataApuracao": "21/10/2026",
+                "dezenas": [1, 5, 6, 7, 10, 11, 14, 15, 16, 17, 18, 19, 20, 23, 24],
+                "premiacoes": [],
+            }
+        ]
+    }
+    sorteios, invalidos = ler_espelho(rjaugusto, "lofa")
+    assert (sorteios[0]["concurso"], sorteios[0]["data"], invalidos) == (3810, "2026-10-21", 0)
+
+    with pytest.raises(FetchError):
+        ler_espelho({"outra": "coisa"}, "mega")
+
+
+def test_fetch_espelhos_descarta_concurso_divergente(monkeypatch):
+    """Dois espelhos com dezenas diferentes no mesmo concurso: ele fica de
+    fora (entra depois pela Caixa), e um espelho fora do ar não derruba o outro."""
+    lofa = list(range(1, 16))
+    outra = list(range(2, 17))
+    eitchtee = [
+        {"concurso": 1, "data": "01/01/2026", "resultado": lofa},
+        {"concurso": 2, "data": "02/01/2026", "resultado": lofa},
+    ]
+    rjaugusto = {
+        "historico": [
+            {"numero": 2, "dataApuracao": "02/01/2026", "dezenas": outra},
+            {"numero": 3, "dataApuracao": "03/01/2026", "dezenas": lofa},
+        ]
+    }
+
+    def responder(req):
+        return httpx.Response(200, json=eitchtee if "eitchtee" in str(req.url) else rjaugusto)
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr(
+        fetcher.httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(responder))
+    )
+    fetcher._cache_espelhos.clear()
+    try:
+        sorteios, avisos = asyncio.run(fetcher.fetch_espelhos("lofa"))
+        assert [s["concurso"] for s in sorteios] == [1, 3]
+        assert any("divergem" in a for a in avisos)
+
+        def mega_fora(req):
+            return httpx.Response(503)
+
+        monkeypatch.setattr(
+            fetcher.httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(mega_fora))
+        )
+        sorteios, avisos = asyncio.run(fetcher.fetch_espelhos("mega"))
+        assert sorteios == [] and "eitchtee" in avisos[0]
+    finally:
+        fetcher._cache_espelhos.clear()
+
+
+def test_gravar_resultado_exige_login():
+    """Sem sessão, ninguém grava resultado — senão um payload falso
+    sobrescreveria o oficial e estragaria a conferência."""
+    with make_client() as c:
+        corpo = {"payloads": [{"numero": 1}]}
+        assert c.post("/api/import-payloads", json=corpo).status_code == 401
+        assert c.post("/api/import-payloads", json=corpo, headers={"X-Session-Id": "inventada"}).status_code == 401
+        assert c.post("/api/import-csv", files={"file": ("x.csv", CSV, "text/csv")}).status_code == 401
+
+
+def test_import_payloads_formato_caixa(sessao):
     """O navegador do usuário envia payloads brutos no formato da Caixa."""
     payload = {
         "numero": 3050,
@@ -102,7 +221,7 @@ def test_import_payloads_formato_caixa():
     }
     invalido = {"numero": None, "listaDezenas": ["1", "2"]}
     with make_client() as c:
-        r = c.post("/api/import-payloads", json={"payloads": [payload, invalido]})
+        r = c.post("/api/import-payloads", json={"payloads": [payload, invalido]}, headers=sessao)
         assert r.status_code == 200
         body = r.json()
         assert body["added"] == 1
@@ -115,11 +234,11 @@ def test_import_payloads_formato_caixa():
 
         # payload mais antigo que o último não sobrescreve o meta "proximo"
         antigo = dict(payload, numero=3040, numeroConcursoProximo=3041)
-        c.post("/api/import-payloads", json={"payloads": [antigo]})
+        c.post("/api/import-payloads", json={"payloads": [antigo]}, headers=sessao)
         assert c.get("/api/status").json()["proximo"]["concurso"] == 3051
 
         # só payloads inválidos -> 400
-        r = c.post("/api/import-payloads", json={"payloads": [invalido]})
+        r = c.post("/api/import-payloads", json={"payloads": [invalido]}, headers=sessao)
         assert r.status_code == 400
 
 

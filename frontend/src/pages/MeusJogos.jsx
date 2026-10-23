@@ -9,6 +9,7 @@ import Card from '../components/Card.jsx'
 import Volante from '../components/Volante.jsx'
 import { formatDate } from '../lib/format.js'
 import { MIN_CONCURSOS, desempenhoPorEstrategia } from '../lib/desempenho.js'
+import { EVENTO_SORTEIOS } from '../lib/sincronizar.js'
 
 // Cor por faixa premiada. As chaves vêm do backend (Mega: sena/quina/quadra;
 // Lotofácil: "15 acertos" … "11 acertos").
@@ -339,8 +340,16 @@ function BetItem({ bet, check, onRemove }) {
             <span className="text-[11px] text-zinc-500">estratégia: {bet.estrategia}</span>
           )}
           {typeof bet.espalhar === 'boolean' && (
-            <span className="text-[11px] text-zinc-500">
+            <span
+              className="text-[11px] text-zinc-500"
+              title={
+                bet.espalhar_deduzido
+                  ? 'Deduzido pelo estudo das dezenas em comum entre os jogos do lote: quando este jogo foi salvo, o app ainda não gravava o Espalhar.'
+                  : undefined
+              }
+            >
               espalhar: {bet.espalhar ? 'ligado' : 'desligado'}
+              {bet.espalhar_deduzido ? ' (deduzido)' : ''}
             </span>
           )}
         </div>
@@ -429,6 +438,13 @@ export default function MeusJogos() {
       .then(setRegua)
       .catch(() => setRegua(null))
   }, [code])
+
+  // Sorteio novo gravado em segundo plano: confere os jogos de novo.
+  useEffect(() => {
+    const atualizar = () => refresh()
+    window.addEventListener(EVENTO_SORTEIOS, atualizar)
+    return () => window.removeEventListener(EVENTO_SORTEIOS, atualizar)
+  }, [refresh])
 
   useEffect(() => {
     refresh()

@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useParams, Navigate } from 'react-router-dom'
 import Disclaimer from './Disclaimer.jsx'
 import { isValidLoteria } from '../lib/lotteries.js'
 import { LotteryProvider, useLottery } from '../lib/LotteryContext.jsx'
+import { sincronizarEmSegundoPlano } from '../lib/sincronizar.js'
 
 const PAGES = [
   { sub: '', label: 'Início', end: true },
@@ -16,6 +18,12 @@ const PAGES = [
 function Shell() {
   const { cfg, basePath } = useLottery()
   const links = PAGES.filter((p) => !p.onlyAvancada || cfg.avancada)
+
+  // Ao entrar na loteria, traz os sorteios novos em segundo plano: assim a
+  // conferência dos jogos fica em dia sem ninguém clicar em "Sincronizar".
+  useEffect(() => {
+    sincronizarEmSegundoPlano(cfg)
+  }, [cfg])
 
   return (
     <div className="min-h-screen bg-zinc-100 text-zinc-900 flex flex-col">

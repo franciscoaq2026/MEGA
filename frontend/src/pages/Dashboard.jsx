@@ -4,6 +4,7 @@ import { apiGet } from '../lib/api.js'
 import { BallRow } from '../components/Ball.jsx'
 import { formatDate, formatMoney } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
+import { EVENTO_SORTEIOS } from '../lib/sincronizar.js'
 
 export default function Dashboard() {
   const { code } = useLottery()
@@ -11,9 +12,14 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    apiGet('/status')
-      .then(setStatus)
-      .catch((e) => setError(e.message))
+    const carregar = () =>
+      apiGet('/status')
+        .then(setStatus)
+        .catch((e) => setError(e.message))
+    carregar()
+    // a sincronização em segundo plano avisa quando grava sorteio novo
+    window.addEventListener(EVENTO_SORTEIOS, carregar)
+    return () => window.removeEventListener(EVENTO_SORTEIOS, carregar)
   }, [])
 
   return (
@@ -35,8 +41,8 @@ export default function Dashboard() {
         <div className="bg-white border border-zinc-200 rounded-xl p-5">
           <p className="font-semibold">Bem-vindo! Comece carregando o histórico de sorteios.</p>
           <p className="text-sm text-zinc-500 mt-1">
-            Vá em <strong>Sorteios</strong> e clique em “Sincronizar sorteios” — o app baixa o
-            histórico completo da Caixa e guarda em cache local.
+            O app carrega o histórico sozinho em alguns segundos. Se nada aparecer, vá em{' '}
+            <strong>Sorteios</strong> e clique em “Sincronizar sorteios”.
           </p>
           <Link
             to={`/${code}/sorteios`}

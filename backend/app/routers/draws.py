@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+import os
+import time
+
+from fastapi import APIRouter, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import db, lotteries
+from .. import auth, db, lotteries
 from ..csv_utils import parse_draws_csv
-from ..fetcher import FetchError, fetch_latest, fetch_many, parse_payload
+from ..fetcher import fetch_espelhos, parse_payload
 
 router = APIRouter(tags=["sorteios"])
 
@@ -74,41 +77,46 @@ def draw(concurso: int, loteria: str | None = Query(default=None)):
     return found
 
 
-def _sync_from_seed(lot: str, max_batch: int) -> dict:
-    """Fallback: carrega o histórico embutido no repositório, em lotes.
+def _exige_sessao(x_session_id: str | None) -> None:
+    """Gravar resultado exige login. Sem isso, qualquer um que descobrisse o
+    endereço do app poderia mandar um resultado falso — e o upsert o gravaria
+    por cima do oficial, estragando a conferência dos jogos."""
+    if not auth.validar_sessao(x_session_id):
+        raise HTTPException(401, "Entre na sua conta para gravar resultados.")
 
-    Usado quando as APIs da Caixa/guidi não respondem (ex.: no Vercel, cujo
-    IP de datacenter é bloqueado por elas). Os dados já vêm no deploy, então
-    aqui é só cópia local do arquivo -> banco, sem rede externa.
-    """
-    seed = db.load_bundled_seed(lot)
-    if not seed:
+
+async def _sincronizar(lot: str, max_batch: int) -> dict:
+    """Uma rodada de sincronização do servidor: histórico embutido + espelhos.
+
+    Não consulta a Caixa nem a guidi — as duas recusam o IP do Vercel. O
+    resultado mais recente, com data e prêmio do próximo concurso, chega pelo
+    navegador do usuário (/import-payloads). Aqui só entram concursos que o
+    banco ainda não tem (ou tem sem data): um espelho nunca sobrescreve o
+    resultado oficial que o navegador trouxe da Caixa."""
+    candidatos = {s["concurso"]: s for s in db.load_bundled_seed(lot)}
+    espelho, avisos = await fetch_espelhos(lot)
+    for s in espelho:
+        candidatos.setdefault(s["concurso"], s)
+    if not candidatos:
         raise HTTPException(
             502,
-            "APIs de resultados indisponíveis e nenhum histórico embutido encontrado. "
-            "Sincronize pelo navegador (IP residencial) ou importe um CSV.",
+            "Nenhuma fonte do servidor respondeu (espelhos fora do ar e sem histórico "
+            f"embutido: {avisos[:2]}). Sincronize logado pelo navegador ou importe um CSV.",
         )
-    existing = db.concursos_com_data(lot)
-    missing = [s for s in seed if s["concurso"] not in existing]
-    batch = missing[:max_batch]
-    if batch:
-        db.upsert_draws(batch, lot)
 
-    last = max(s["concurso"] for s in seed)
-    ultimo_local = db.latest_local(lot)
-    if not ultimo_local or last >= ultimo_local["concurso"]:
-        db.set_meta(
-            _prox_key(lot),
-            {"concurso": last + 1, "data": None, "estimativa": None, "acumulado": None},
-        )
+    datados = db.concursos_com_data(lot)
+    faltando = [candidatos[n] for n in sorted(candidatos) if n not in datados]
+    lote = faltando[:max_batch]
+    if lote:
+        db.upsert_draws(lote, lot)
     return {
-        "source": "dados-embutidos",
-        "latest_remote": last,
-        "added": len(batch),
-        "errors": [],
+        "source": "seed+espelhos",
+        "latest_remote": max(candidatos),
+        "added": len(lote),
+        "errors": avisos[:5],
         "total_local": db.count_draws(lot),
-        "remaining": len(missing) - len(batch),
-        "proximo": db.get_meta(_prox_key(lot)),
+        "remaining": len(faltando) - len(lote),
+        "proximo": _proximo_saneado(lot, db.latest_local(lot)),
     }
 
 
@@ -117,53 +125,41 @@ async def sync(
     max_batch: int = Query(200, ge=1, le=1000),
     loteria: str | None = Query(default=None),
 ):
-    """Sincronização incremental: busca só o que falta, em lotes.
+    """Sincronização incremental do servidor, em lotes: o frontend repete a
+    chamada até remaining == 0 (cada lote cabe no tempo da função serverless).
+    Aberta sem login: só acrescenta o que falta, vindo de fontes fixas."""
+    return await _sincronizar(_loteria(loteria), max_batch)
 
-    Tenta a API da Caixa (com fallback guidi) — que funciona a partir de um IP
-    residencial. Se ambas falharem (caso do Vercel), cai para o histórico
-    embutido no repositório. O frontend chama repetidamente até remaining == 0.
-    """
-    lot = _loteria(loteria)
-    try:
-        latest = await fetch_latest(lot)
-    except FetchError:
-        return _sync_from_seed(lot, max_batch)
 
-    latest_num = latest["concurso"]
-    # Só atualiza o "próximo" se a fonte não estiver defasada em relação ao que
-    # já temos localmente. Evita que um espelho estático atrasado rebaixe o
-    # próximo depois de o navegador já ter trazido concursos mais novos.
-    ultimo_local = db.latest_local(lot)
-    if not ultimo_local or latest_num >= ultimo_local["concurso"]:
-        db.set_meta(_prox_key(lot), latest["proximo"])
+@router.get("/cron/sync")
+async def cron_sync(authorization: str | None = Header(default=None)):
+    """Sincronização diária disparada pelo Cron Jobs da Vercel (vercel.json).
 
-    # Precisa buscar: concursos ausentes OU salvos sem data.
-    dated = db.concursos_com_data(lot)
-    need = [n for n in range(1, latest_num + 1) if n not in dated]
-    batch_nums = need[:max_batch]
-
-    # Resolve cada concurso: primeiro do histórico embutido (instantâneo, sem
-    # rede), e só o que for mais novo que o seed vem da rede.
-    seed = {s["concurso"]: s for s in db.load_bundled_seed(lot)}
-    from_seed = [seed[n] for n in batch_nums if n in seed]
-    to_fetch = [n for n in batch_nums if n not in seed]
-
-    fetched, errors = ([], [])
-    if to_fetch:
-        fetched, errors = await fetch_many(to_fetch, lot)
-    rows = from_seed + fetched
-    if rows:
-        db.upsert_draws(rows, lot)
-
-    return {
-        "source": "api+seed",
-        "latest_remote": latest_num,
-        "added": len(rows),
-        "errors": errors[:5],
-        "total_local": db.count_draws(lot),
-        "remaining": len(need) - len(batch_nums),
-        "proximo": latest["proximo"],
-    }
+    Puxa as loterias dos espelhos em lotes, até acabar o que falta ou o tempo
+    apertar (a função tem 60 s). Com a variável CRON_SECRET definida no
+    projeto, a Vercel a envia como "Authorization: Bearer <segredo>" e só essa
+    chamada passa; sem ela o endpoint fica aberto, o que é seguro pelo mesmo
+    motivo do /sync."""
+    segredo = os.environ.get("CRON_SECRET")
+    if segredo and authorization != f"Bearer {segredo}":
+        raise HTTPException(401, "não autorizado")
+    inicio = time.monotonic()
+    resumo = {}
+    for code in lotteries.LOTERIAS:
+        adicionados, r = 0, None
+        while time.monotonic() - inicio < 45:
+            r = await _sincronizar(code, 200)
+            adicionados += r["added"]
+            if r["remaining"] <= 0 or r["added"] == 0:
+                break
+        ultimo = db.latest_local(code)
+        resumo[code] = {
+            "added": adicionados,
+            "remaining": r["remaining"] if r else None,
+            "ultimo": ultimo["concurso"] if ultimo else None,
+            "errors": r["errors"] if r else ["sem tempo para sincronizar"],
+        }
+    return resumo
 
 
 class PayloadsImport(BaseModel):
@@ -171,7 +167,11 @@ class PayloadsImport(BaseModel):
 
 
 @router.post("/import-payloads")
-def import_payloads(req: PayloadsImport, loteria: str | None = Query(default=None)):
+def import_payloads(
+    req: PayloadsImport,
+    loteria: str | None = Query(default=None),
+    x_session_id: str | None = Header(default=None),
+):
     """Recebe payloads brutos (formato Caixa/guidi) buscados PELO NAVEGADOR
     do usuário e grava no banco.
 
@@ -180,6 +180,7 @@ def import_payloads(req: PayloadsImport, loteria: str | None = Query(default=Non
     direto no navegador e repassa para cá — o servidor valida com o mesmo
     parser das fontes oficiais antes de gravar.
     """
+    _exige_sessao(x_session_id)
     lot = _loteria(loteria)
     rows: list[dict] = []
     errors: list[str] = []
@@ -206,11 +207,16 @@ def import_payloads(req: PayloadsImport, loteria: str | None = Query(default=Non
 
 
 @router.post("/import-csv")
-async def import_csv(file: UploadFile, loteria: str | None = Query(default=None)):
+async def import_csv(
+    file: UploadFile,
+    loteria: str | None = Query(default=None),
+    x_session_id: str | None = Header(default=None),
+):
     """Plano C: importa um CSV com colunas concurso, data, dezena1..dezenaN.
 
     O parser é o da loteria de destino: um CSV da Mega enviado para a Lotofácil
     (ou o contrário) é recusado em vez de entrar truncado."""
+    _exige_sessao(x_session_id)
     lot = _loteria(loteria)
     raw = await file.read()
     if len(raw) > MAX_CSV_BYTES:

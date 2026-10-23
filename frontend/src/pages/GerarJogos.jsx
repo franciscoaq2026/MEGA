@@ -41,6 +41,81 @@ const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'))
 const num = (n, d = 2) =>
   n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
 
+// Como a prévia do painel foi calculada (texto depois de "sem espalhar seria X% —").
+const METODO_PREVIA = {
+  enumerado: ' média de lotes medida contando todos os sorteios possíveis',
+  combinatorio: ' conta exata a partir das dezenas que os bilhetes dividem entre si',
+  simulado: ' estimado por simulação de 60 mil sorteios sobre um lote de exemplo (±0,4 ponto)',
+}
+
+// "Em quantos concursos de cada 100": inteiro a partir de 10, uma casa abaixo.
+const porCem = (x) => (x >= 9.95 ? String(Math.round(x)) : num(x, 1))
+
+// Quanto o Espalhar muda com a quantidade de jogos digitada. De propósito não
+// diz qual opção é "melhor": o dinheiro que volta, em média, é o mesmo nas
+// duas — muda só a regularidade. Os números são os do painel (jogos ao acaso).
+function QuadroEspalhar({ carteira, qtdJogos, cfg, estrategia }) {
+  const sem = 100 * (1 - carteira.qualquer_solto.prob)
+  const com = 100 * (1 - carteira.qualquer.prob)
+  const diferenca = sem - com
+  if (diferenca < 1) {
+    return (
+      <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 leading-relaxed">
+        <strong className="text-zinc-800">
+          Espalhar com {qtdJogos} jogos na {cfg.nome}: tanto faz.
+        </strong>{' '}
+        A cada 100 concursos, você ficaria sem nenhum prêmio em {porCem(sem)} sem Espalhar e em{' '}
+        {porCem(com)} com Espalhar — menos de 1 concurso de diferença.
+      </div>
+    )
+  }
+  return (
+    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
+      <strong>
+        Espalhar com {qtdJogos} jogos na {cfg.nome}: faz {diferenca < 3 ? 'pouca ' : ''}diferença.
+      </strong>{' '}
+      A cada 100 concursos, você ficaria sem nenhum prêmio em <strong>{porCem(sem)}</strong> sem
+      Espalhar e em <strong>{porCem(com)}</strong> com Espalhar. Em troca, com o Espalhar ficam mais
+      raros os concursos com muitos prêmios juntos. O dinheiro que volta, em média, é o mesmo:
+      ligue se prefere receber algo com mais frequência.
+      {estrategia === 'atrasados' && (
+        <span className="block mt-1 text-emerald-800">
+          Estes números supõem jogos ao acaso. Com Atrasados, os jogos repetem as mesmas dezenas
+          atrasadas e, sem Espalhar, ficam sem prêmio mais vezes — depois de gerar, o app mostra a
+          conta dos seus jogos.
+        </span>
+      )}
+    </div>
+  )
+}
+
+const METODO_LOTE = {
+  exato: ' (conta exata)',
+  combinatorio: ' (conta exata)',
+  simulado: ' (simulação de 60 mil sorteios, margem de ±0,4 ponto)',
+}
+
+// A chance de levar algum prêmio com os jogos que saíram de verdade — que
+// depende de quanto eles repetem dezenas entre si, e por isso da estratégia.
+function ChanceDoLote({ carteira, jogos, referencia }) {
+  const q = carteira.qualquer
+  const abaixo = referencia != null ? 100 * (referencia - q.prob) : 0
+  return (
+    <div className="text-xs rounded-lg border px-3 py-2 mb-3 leading-relaxed bg-emerald-50 border-emerald-200 text-emerald-900">
+      Com <strong>estes {jogos} jogos</strong>, a chance de levar algum prêmio é de{' '}
+      <strong>{fmt(q.pct)}%</strong>: sem nenhum prêmio em ~{porCem(100 * (1 - q.prob))} de cada
+      100 concursos{METODO_LOTE[carteira.metodo] ?? ''}.
+      {abaixo >= 1.5 && (
+        <>
+          {' '}
+          Isso fica <strong>{num(abaixo, 1)} ponto(s) abaixo</strong> de jogos ao acaso, porque os
+          seus jogos repetem mais dezenas entre si. O retorno médio não muda.
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
   // Acertos que o PURO ACASO entrega por jogo: escolher x sorteadas / total.
@@ -126,24 +201,25 @@ export default function GerarJogos() {
   const mesmaChance =
     carteira && fmt(carteira.qualquer_solto.pct) === fmt(carteira.qualquer.pct)
   const ajudaEspalhar = !carteira
-    ? 'Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Você leva algum ' +
-      'prêmio um pouco mais vezes, e menos vezes em dois bilhetes de uma vez. O retorno médio é ' +
-      'idêntico nos dois casos, e a chance do prêmio principal não muda. É preferência de ' +
-      'formato, não vantagem.'
+    ? 'Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. O resultado fica ' +
+      'mais regular: menos concursos sem nenhum prêmio e menos concursos com muitos prêmios ' +
+      'juntos. O retorno médio é idêntico nos dois casos, e a chance do prêmio principal não ' +
+      'muda. É preferência de formato, não vantagem.'
     : mesmaChance
       ? `Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Na ${cfg.nome} ` +
         `isso quase não muda nada: com ${qtdJogos} bilhetes de ${cfg.escolher} dezenas em ` +
         `${cfg.total}, eles já saem praticamente sem se tocar, então a chance de levar algum ` +
-        `prêmio fica em ${fmt(carteira.qualquer.pct)}% dos dois jeitos — e já é o máximo ` +
-        `possível. Espalhar rende de verdade onde os bilhetes são obrigados a se sobrepor, ` +
+        `prêmio fica em ${fmt(carteira.qualquer.pct)}% dos dois jeitos` +
+        `${carteira.metodo === 'exato' ? ' — e já é o máximo possível' : ''}. ` +
+        `Espalhar rende de verdade onde os bilhetes são obrigados a se sobrepor, ` +
         `como na Lotofácil (15 dezenas em 25). O retorno médio e a chance do prêmio principal ` +
         `não mudam em nenhum caso.`
       : `Faz os seus bilhetes serem diferentes entre si, em vez de quase iguais. Com ${qtdJogos} ` +
         `bilhetes na ${cfg.nome}, a chance de levar algum prêmio vai de ` +
         `${fmt(carteira.qualquer_solto.pct)}% (bilhetes soltos) para ${fmt(carteira.qualquer.pct)}% — ` +
-        `são os mesmos números do painel ao lado. Em compensação, cai a chance de levar em dois ` +
-        `bilhetes ao mesmo tempo: o RETORNO MÉDIO é idêntico nos dois casos, porque os dois ` +
-        `efeitos se cancelam. E a chance do prêmio principal não muda: são ${qtdJogos} bilhetes ` +
+        `são os mesmos números do painel ao lado. Em compensação, ficam mais raros os concursos ` +
+        `com muitos prêmios juntos: o RETORNO MÉDIO é idêntico nos dois casos, porque um efeito ` +
+        `compensa o outro. E a chance do prêmio principal não muda: são ${qtdJogos} bilhetes ` +
         `entre as mesmas combinações possíveis de qualquer jeito. É preferência de formato, ` +
         `não vantagem.`
 
@@ -211,7 +287,10 @@ export default function GerarJogos() {
         anti_rateio: antiRateio,
         espalhar: simples && espalhar,
       })
-      setResult(r)
+      // A prévia do painel supõe jogos ao acaso; guardada aqui para comparar
+      // com a chance dos jogos que saíram de verdade.
+      const referencia = carteira?.jogos === qtdJogos && chanceAlgo ? chanceAlgo.prob : null
+      setResult({ ...r, referencia })
       setSalvos({})
     } catch (e) {
       setError(e.message)
@@ -365,9 +444,9 @@ export default function GerarJogos() {
                     <Help text={ajudaEspalhar} />
                   </span>
                   <span className="block text-xs text-zinc-500">
-                    Ganha algo com um pouco mais de frequência, e menos vezes em dois bilhetes de
-                    uma vez. O <strong>retorno médio é o mesmo</strong> — e a chance do prêmio
-                    principal também.
+                    Menos concursos sem nenhum prêmio e menos com muitos prêmios juntos. O{' '}
+                    <strong>retorno médio é o mesmo</strong> — e a chance do prêmio principal
+                    também.
                   </span>
                 </span>
               </label>
@@ -393,6 +472,10 @@ export default function GerarJogos() {
               </span>
             </label>
           </div>
+
+          {simples && qtdJogos > 1 && carteira?.jogos === qtdJogos && (
+            <QuadroEspalhar carteira={carteira} qtdJogos={qtdJogos} cfg={cfg} estrategia={estrategia} />
+          )}
 
           <button
             onClick={gerar}
@@ -460,9 +543,7 @@ export default function GerarJogos() {
                       ) : (
                         <>
                           sem espalhar seria <strong>{fmt(carteira.qualquer_solto.pct)}%</strong> —
-                          {carteira.metodo === 'enumerado'
-                            ? ' medido por enumeração exata de todos os sorteios possíveis'
-                            : ' medido por simulação sobre os bilhetes deste lote (seus bilhetes já se sobrepõem mais do que a zona sem custo permite)'}
+                          {METODO_PREVIA[carteira.metodo] ?? ''}
                         </>
                       )}
                       . O retorno médio é o mesmo nos dois casos.
@@ -543,6 +624,13 @@ export default function GerarJogos() {
           title={`Jogos gerados — ${ESTRATEGIAS.find((e) => e.id === result.estrategia)?.nome}`}
           subtitle={result.aviso}
         >
+          {result.carteira?.lote && result.jogos.length > 1 && (
+            <ChanceDoLote
+              carteira={result.carteira}
+              jogos={result.jogos.length}
+              referencia={result.referencia}
+            />
+          )}
           {result.sobreposicao && (
             <div
               className={`text-xs rounded-lg border px-3 py-2 mb-3 leading-relaxed ${

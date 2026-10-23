@@ -426,9 +426,20 @@ depende de como os bilhetes se sobrepõem:
 
 - **Teto**: `min(1, N·p)`, pela união. Atingido quando nenhum par pode premiar
   no mesmo sorteio, isto é, sobreposição ≤ `limiar_sobreposicao` (§6.5.2).
-- **Mega**: o gerador com `espalhar` mantém sobreposição máxima ≤ 1 para todo N
-  até 20 (6 dezenas em 60 dão espaço de sobra), então `P = N·p` exatamente.
-  Flag `espalhar_na_zona_gratuita` na config.
+- **Lote concreto** (`chance_lote`): inclusão-exclusão `S1 − S2 + S3 − …`, em
+  que só entram grupos de bilhetes em que todo par passa do limiar. Sem par
+  acima do limiar, `P = N·p` (método `exato`). Até 3 bilhetes a série é exata;
+  com mais, pelas desigualdades de Bonferroni `S1 − S2 + S3` fica a menos de
+  `S3` da verdade, e é usada quando isso é desprezível — o caso da Mega, em
+  que premiar junto é raro (erro < 0,02 ponto até 200 bilhetes; método
+  `combinatorio`). Onde premiar junto é comum (Lotofácil com 4+ bilhetes), a
+  série não converge rápido: simulação de 60 mil sorteios (`simulado`,
+  ±0,4 ponto). Validada contra a enumeração completa (loteria pequena e
+  Lotofácil com 2–3 bilhetes: erro ~1e-16).
+- **Mega**: até ~30 bilhetes espalhados nenhum par passa do limiar e
+  `P = N·p`; acima disso entra a conta combinatória. Antes era simulação, cujo
+  ruído (±0,05 ponto) superava o efeito do Espalhar na Mega — com 40 e 50
+  bilhetes o painel mostrava o Espalhar reduzindo a chance.
 - **Lotofácil**: a zona gratuita só é alcançável com 2 bilhetes. Com 3+, o piso
   de sobreposição já a ultrapassa, e não há fórmula fechada — os valores vêm
   medidos por enumeração exata dos 3.268.760 sorteios (`carteira_espalhada`,
@@ -441,10 +452,20 @@ depende de como os bilhetes se sobrepõem:
 | 12 | 73,90% | 80,89% |
 | 20 | 89,34% | 94,11% |
 
-Antes desta correção `/odds/carteira` ignorava a opção `espalhar`, e a tela
-"Probabilidades reais" mostrava o número de bilhetes soltos mesmo com espalhar
-ligado — o painel não reagia ao checkbox. O retorno médio segue idêntico nos
-dois modos: espalhar redistribui, não aumenta.
+`/odds/carteira` é a **prévia** do painel (jogos ao acaso, pela quantidade).
+O `/generate` devolve `carteira` calculada sobre os **jogos gerados**
+(`lote: true`), com ou sem Espalhar, porque a chance depende de quanto os
+bilhetes se repetem — e isso muda com a estratégia: Atrasados na Lotofácil,
+sem Espalhar, repete as mesmas dezenas atrasadas e fica ~4 pontos abaixo da
+prévia com 6 jogos. A tela mostra os dois números e avisa a diferença.
+
+O retorno médio é idêntico nos dois modos: espalhar redistribui, não aumenta.
+O que muda é a regularidade — menos concursos sem prêmio e menos concursos
+com muitos prêmios juntos, com a mesma média. Por isso a tela não diz qual
+opção é "melhor": o quadro do Espalhar mostra, para a quantidade digitada,
+em quantos concursos de cada 100 ficaria sem prêmio com e sem Espalhar
+("tanto faz" abaixo de 1 de diferença — sempre na Mega; na Lotofácil o efeito
+máximo é com ~10 jogos: 33 contra 26).
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

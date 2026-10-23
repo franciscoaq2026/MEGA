@@ -105,13 +105,11 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
         draws, req.estrategia, req.jogos, dezenas, req.anti_rateio,
         loteria=lot, espalhar=espalhar,
     )
-    # Bilhetes DE VERDADE deste lote — passados para odds_carteira() checar a
-    # sobreposição real em vez de supor. É o que fecha o bug em que "espalhar"
-    # ligado podia mostrar uma chance de "ganhar algo" que os jogos gerados na
-    # tela não sustentavam de verdade (Mega superestimava acima de ~N=25–40;
-    # Lotofácil silenciosamente parava de refletir o espalhamento acima de
-    # N=20, mesmo o ganho real continuando a existir).
-    bilhetes_reais = [set(j["dezenas"]) for j in jogos] if espalhar else None
+    # A chance de "levar algo" é calculada sobre os bilhetes DE VERDADE, com ou
+    # sem Espalhar: depende de quanto eles se repetem entre si, e isso muda
+    # com a estratégia (Atrasados na Lotofácil repete as mesmas dezenas e fica
+    # bem abaixo da prévia do painel, que supõe jogos ao acaso).
+    bilhetes_reais = [set(j["dezenas"]) for j in jogos]
     return {
         "estrategia": req.estrategia,
         "descricao": generator.ESTRATEGIAS[req.estrategia],

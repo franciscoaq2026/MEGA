@@ -338,6 +338,11 @@ function BetItem({ bet, check, onRemove }) {
           {bet.estrategia && (
             <span className="text-[11px] text-zinc-500">estratégia: {bet.estrategia}</span>
           )}
+          {typeof bet.espalhar === 'boolean' && (
+            <span className="text-[11px] text-zinc-500">
+              espalhar: {bet.espalhar ? 'ligado' : 'desligado'}
+            </span>
+          )}
         </div>
         <button
           onClick={() => onRemove(bet.id)}

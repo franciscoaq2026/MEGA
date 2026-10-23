@@ -108,3 +108,48 @@ def test_validacao_dezenas():
         assert c.post("/api/bets", json={"concurso": 1, "origem": "manual", "dezenas": [1, 1, 2, 3, 4, 5]}, headers=h).status_code == 422
         # origem inválida
         assert c.post("/api/bets", json={"concurso": 1, "origem": "x", "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h).status_code == 422
+
+
+def test_espalhar_gravado_por_jogo():
+    """true/false voltam como foram salvos; ausente vira None (não se aplica)."""
+    with make_client() as c:
+        h = {"X-Session-Id": _login(c)}
+        base = {"concurso": 2800, "origem": "app", "estrategia": "aleatorio"}
+        c.post("/api/bets", json={**base, "id": "e1", "espalhar": True, "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h)
+        c.post("/api/bets", json={**base, "id": "e2", "espalhar": False, "dezenas": [7, 8, 9, 10, 11, 12]}, headers=h)
+        c.post("/api/bets", json={**base, "id": "e3", "dezenas": [13, 14, 15, 16, 17, 18]}, headers=h)
+        # o sync (caminho do celular/computador) preserva o campo
+        c.post(
+            "/api/bets/sync",
+            json={"bets": [{**base, "id": "e4", "espalhar": False, "dezenas": [19, 20, 21, 22, 23, 24]}]},
+            headers=h,
+        )
+        por_id = {b["id"]: b["espalhar"] for b in c.get("/api/bets", headers=h).json()["bets"]}
+        assert (por_id["e1"], por_id["e2"], por_id["e3"], por_id["e4"]) == (True, False, None, False)
+
+
+def test_migracao_adiciona_coluna_espalhar(tmp_path, monkeypatch):
+    """Banco criado antes do campo: a coluna entra no init e os jogos antigos
+    continuam lá, com espalhar = None."""
+    import sqlite3
+
+    caminho = tmp_path / "antigo.db"
+    con = sqlite3.connect(caminho)
+    con.execute(
+        "CREATE TABLE bets (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, "
+        "loteria TEXT NOT NULL DEFAULT 'mega', concurso INTEGER NOT NULL, origem TEXT NOT NULL, "
+        "estrategia TEXT, dezenas TEXT NOT NULL, criado_em TEXT NOT NULL)"
+    )
+    con.execute(
+        "INSERT INTO bets VALUES ('velho', 'owner', 'mega', 3000, 'app', 'aleatorio', '[1,2,3,4,5,6]', '')"
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(db, "DB_PATH", str(caminho))
+    db.init_db()
+    cols = {r["name"] for r in db._query("PRAGMA table_info(bets)")}
+    assert "espalhar" in cols
+    assert db.list_bets("owner")[0]["espalhar"] is None
+    db.upsert_bet("owner", {"id": "novo", "concurso": 3001, "origem": "app", "dezenas": [1, 2, 3, 4, 5, 6], "espalhar": True})
+    assert {b["id"]: b["espalhar"] for b in db.list_bets("owner")} == {"velho": None, "novo": True}

@@ -15,6 +15,7 @@ Tudo é parametrizado pela loteria; nada assume "6 de 60".
 
 import random
 from collections import Counter
+from functools import lru_cache, partial
 from itertools import combinations
 from math import comb, sqrt
 
@@ -66,15 +67,23 @@ def aleatorio(rng: random.Random, _draws: list[dict], k: int, numbers: list[int]
     return sorted(rng.sample(numbers, k))
 
 
-def frequencia(rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None) -> list[int]:
+# `counts`/`delays`: o resumo do histórico já calculado. O gerar() calcula uma
+# vez por pedido; sem isso, cada candidato recontava o histórico inteiro.
+def frequencia(
+    rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None,
+    counts: Counter | None = None,
+) -> list[int]:
     numbers = numbers or _numbers()
-    counts = _freq_counts(draws)
+    counts = _freq_counts(draws) if counts is None else counts
     return _weighted_sample(rng, {n: counts.get(n, 0) + 1 for n in numbers}, k)
 
 
-def atrasados(rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None) -> list[int]:
+def atrasados(
+    rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None,
+    delays: dict[int, int] | None = None,
+) -> list[int]:
     numbers = numbers or _numbers()
-    delays = _delays_pool(draws, numbers)
+    delays = _delays_pool(draws, numbers) if delays is None else delays
     return _weighted_sample(rng, {n: delays[n] + 1 for n in numbers}, k)
 
 
@@ -95,10 +104,11 @@ def _sum_tolerance(n_pool: int, k: int) -> float:
 
 
 def balanceado(
-    rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None, max_tries: int = 400
+    rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None, max_tries: int = 400,
+    counts: Counter | None = None,
 ) -> list[int]:
     numbers = numbers or _numbers()
-    counts = _freq_counts(draws)
+    counts = _freq_counts(draws) if counts is None else counts
     ordered = sorted(numbers, key=lambda n: (-counts.get(n, 0), n))
     metade = len(numbers) // 2
     hot, cold = ordered[:metade], ordered[metade:]
@@ -245,9 +255,11 @@ def gerar(
     médio é exato e igual nos três — é 5 x 25,67% x R$ 3,50, e a esperança da
     soma não depende de correlação nenhuma.
 
-    Ou seja: espalhar REDISTRIBUI, não aumenta. Ganha-se algo um pouco mais
-    vezes e ganha-se em vários bilhetes um pouco menos vezes; o retorno médio
-    é idêntico, porque a esperança da soma de N bilhetes é N vezes a de um,
+    Ou seja: espalhar REDISTRIBUI, não aumenta. O número de bilhetes premiados
+    por concurso varia menos: menos concursos sem nada e menos com muitos
+    prêmios juntos (com 5 bilhetes isso inclui "2+"; com 20, não — 2+ sobe de
+    64% para 70%, enquanto 5+ cai de 5,4% para 2,2%). O retorno médio é
+    idêntico, porque a esperança da soma de N bilhetes é N vezes a de um,
     independentemente da correlação entre eles. A chance do prêmio principal
     também não muda: são N em C(total, escolher) de qualquer jeito.
 
@@ -260,7 +272,15 @@ def gerar(
     cfg = lotteries.get_loteria(loteria)
     numbers = lotteries.numbers(cfg)
     rng = rng or random.Random()
-    gerador = GERADORES[estrategia]
+    # O resumo do histórico (contagem ou atraso de cada dezena) sai uma vez por
+    # pedido. Antes era refeito a cada candidato — até 120 por bilhete com o
+    # Espalhar —, e 50 jogos pela Frequência levavam ~5 s.
+    resumo = {}
+    if estrategia in ("frequencia", "balanceado"):
+        resumo["counts"] = _freq_counts(draws)
+    elif estrategia == "atrasados":
+        resumo["delays"] = _delays_pool(draws, numbers)
+    gerador = partial(GERADORES[estrategia], **resumo)
     premiadas = {tuple(sorted(d["dezenas"])) for d in draws}
     resultado = []
     vistos: set[tuple] = set()
@@ -388,9 +408,8 @@ def qualquer_medido(
     mesmo sorteio), sem precisar assumir nada sobre como eles se sobrepõem —
     ao custo de ruído de amostragem, pequeno com `trials` na casa de 10⁴–10⁵
     (erro-padrão bem abaixo de 0,1 ponto percentual nas faixas de chance que
-    aparecem aqui). Usado só quando a sobreposição do lote real ULTRAPASSA a
-    zona gratuita (`limiar_sobreposicao`) — dentro dela a conta é exata e sai
-    de graça, sem precisar simular nada."""
+    aparecem aqui). É o último recurso de `chance_lote`: só entra onde a conta
+    exata não converge rápido (Lotofácil, a partir de 4 bilhetes)."""
     rng = rng or random.Random()
     pool = lotteries.numbers(cfg)
     sorteadas = cfg["sorteadas"]
@@ -403,74 +422,150 @@ def qualquer_medido(
     return ganhou / trials
 
 
-def _qualquer_espalhado(
-    n_jogos: int,
-    p_uma: float,
-    cfg: dict,
-    bilhetes: list[set[int]] | None = None,
-    rng: random.Random | None = None,
+def _p_premiar(cfg: dict) -> float:
+    """Chance de UM bilhete simples chegar à faixa mínima."""
+    k, sd, total, m = cfg["escolher"], cfg["sorteadas"], cfg["total"], min(cfg["faixas"])
+    return sum(comb(k, h) * comb(total - k, sd - h) for h in range(m, min(k, sd) + 1)) / comb(total, sd)
+
+
+@lru_cache(maxsize=None)
+def _par_premia_junto(o: int, k: int, m: int, sd: int, total: int) -> float:
+    """P(dois bilhetes de k dezenas, com `o` em comum, fazerem m+ acertos no
+    mesmo sorteio). Conta exata: as `sd` bolas sorteadas se repartem entre as
+    dezenas em comum, as só de um, as só do outro e o resto do volante."""
+    so, resto = k - o, total - (2 * k - o)
+    casos = 0
+    for s in range(min(o, sd) + 1):
+        for a in range(min(so, sd - s) + 1):
+            for b in range(min(so, sd - s - a) + 1):
+                r = sd - s - a - b
+                if r <= resto and s + a >= m and s + b >= m:
+                    casos += comb(o, s) * comb(so, a) * comb(so, b) * comb(resto, r)
+    return casos / comb(total, sd)
+
+
+# Pedaços do diagrama de Venn de três bilhetes: (está em A, em B, em C).
+_REGIOES_TRIO = ((1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1))
+
+
+@lru_cache(maxsize=None)
+def _trio_premia_junto(tamanhos: tuple, m: int, sd: int, total: int) -> float:
+    """P(três bilhetes fazerem m+ acertos no mesmo sorteio), dado o tamanho de
+    cada pedaço do diagrama de Venn (na ordem de _REGIOES_TRIO)."""
+    regioes = _REGIOES_TRIO + ((0, 0, 0),)
+    tams = tamanhos + (total - sum(tamanhos),)
+    casos = 0
+
+    def reparte(i, faltam, prod, ha, hb, hc):
+        nonlocal casos
+        if i == len(regioes):
+            if faltam == 0 and ha >= m and hb >= m and hc >= m:
+                casos += prod
+            return
+        ea, eb, ec = regioes[i]
+        for x in range(min(faltam, tams[i]) + 1):
+            reparte(i + 1, faltam - x, prod * comb(tams[i], x), ha + x * ea, hb + x * eb, hc + x * ec)
+
+    reparte(0, sd, 1, 0, 0, 0)
+    return casos / comb(total, sd)
+
+
+def chance_lote(
+    bilhetes: list[set[int]], cfg: dict, rng: random.Random | None = None
 ) -> tuple[float, str]:
-    """Chance de levar algo com N bilhetes ESPALHADOS pelo gerador do app.
+    """P(pelo menos um bilhete do lote chegar à faixa mínima), para um lote
+    CONCRETO de apostas simples. Devolve (probabilidade, método).
 
-    Isto substitui uma versão anterior que decidia "zona gratuita" por uma
-    SUPOSIÇÃO estática (uma flag por loteria + `N·p <= 1`), sem checar se o
-    gerador de verdade conseguia manter a sobreposição baixa. Medido: para a
-    Mega, a suposição furava a partir de N≈25–40 (variando com a semente) —
-    beeeem antes do teto antigo de N·p<=1 (que só travaria perto de N=2298) —
-    e o painel continuava afirmando "exato" com um erro real (~0,15pp em
-    N=200, contra simulação de 3 milhões de sorteios). Na Lotofácil, a tabela
-    medida (`carteira_espalhada`) só ia até N=20; acima disso o código caía no
-    independente e a opção "espalhar" virava um "faz de conta" sem efeito.
+    Inclusão-exclusão: P = S1 − S2 + S3 − …, em que Sk soma a chance de k
+    bilhetes premiarem juntos. Só entram grupos em que TODO par divide mais
+    dezenas que o limiar (`limiar_sobreposicao`) — os demais não premiam
+    juntos nunca.
 
-    Ordem de prioridade (a mais precisa que se aplica ganha):
+    1. Nenhum par passa do limiar: P = N·p, o teto ("exato").
+    2. Até 3 bilhetes a série acaba em S3 e é exata; com mais, pelas
+       desigualdades de Bonferroni S1 − S2 + S3 fica a menos de S3 da verdade
+       — usada quando isso é desprezível. É o caso da Mega, em que premiar
+       junto é raro: até 200 bilhetes o erro fica abaixo de 0,02 ponto
+       ("combinatorio").
+    3. Onde premiar junto é comum (Lotofácil, a partir de 4 bilhetes), a série
+       não converge rápido: simulação de 60 mil sorteios ("simulado").
 
-    1. Zona gratuita (`limiar_sobreposicao`) medida no lote DE VERDADE — se
-       `bilhetes` foi passado (chamada de `/generate`, jogos já gerados) e
-       nenhum par ultrapassa o limiar, P = N·p é exata, sem termo de correção
-       (a inclusão-exclusão não tem o que subtrair).
-    2. Tabela medida por enumeração exata dos 3.268.760 sorteios possíveis
-       (`carteira_espalhada` em lotteries.py) quando N está nela — mais
-       precisa que simular, então tem prioridade mesmo com `bilhetes` real
-       em mãos.
-    3. Fora das duas: mede por simulação (`qualquer_medido`) sobre os
-       bilhetes reais quando existem, ou sobre um lote de PRÉVIA gerado com o
-       mesmo motor (semente fixa por N, então o painel ao vivo não muda a
-       cada consulta) quando ainda não há jogos gerados.
-
-    O resultado da simulação nunca pode superar o teto de Boole (N·p, válido
-    sempre, com ou sem correlação entre bilhetes) — sem o `min()`, ruído de
-    amostragem ocasionalmente empurra a estimativa acima do teto, o que
-    pareceria um erro pra quem está lendo o painel."""
+    Antes, a Mega acima de ~30 bilhetes caía na simulação, cujo ruído
+    (±0,05 ponto) é maior que o próprio efeito do Espalhar nela: o painel
+    chegava a mostrar o Espalhar REDUZINDO a chance com 40 e 50 bilhetes."""
+    k, sd, total, m = cfg["escolher"], cfg["sorteadas"], cfg["total"], min(cfg["faixas"])
+    n = len(bilhetes)
+    teto = n * _p_premiar(cfg)  # Boole: P(união) <= soma das probabilidades
     limiar = limiar_sobreposicao(cfg)
-    teto = n_jogos * p_uma  # Boole: P(união) <= soma das probabilidades, sempre
-    tabela = cfg.get("carteira_espalhada") or {}
 
-    if bilhetes is not None and _overlap_maximo(bilhetes) <= limiar:
+    s2 = 0.0
+    vizinhos: dict[int, set[int]] = {i: set() for i in range(n)}
+    juntos: dict[tuple[int, int], float] = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            o = len(bilhetes[i] & bilhetes[j])
+            if o > limiar:
+                juntos[(i, j)] = _par_premia_junto(o, k, m, sd, total)
+                s2 += juntos[(i, j)]
+                vizinhos[i].add(j)
+                vizinhos[j].add(i)
+    if not juntos:
         return teto, "exato"
+
+    trios = [
+        (i, j, t)
+        for i in range(n)
+        for j in sorted(vizinhos[i])
+        if j > i
+        for t in sorted(vizinhos[i] & vizinhos[j])
+        if t > j
+    ] if n >= 3 else []
+    # Cota barata de S3 (cada trio vale no máximo o seu par menos provável)
+    # para não pagar a conta cara dos trios onde ela não vai convergir.
+    cota_s3 = 0.0
+    for i, j, t in trios:
+        cota_s3 += min(juntos[(i, j)], juntos[(i, t)], juntos[(j, t)])
+        if n > 3 and cota_s3 > 0.005:
+            break
+    if n <= 3 or cota_s3 <= 0.005:
+        s3 = 0.0
+        for i, j, t in trios:
+            a, b, c = bilhetes[i], bilhetes[j], bilhetes[t]
+            abc = len(a & b & c)
+            ab, ac, bc = len(a & b) - abc, len(a & c) - abc, len(b & c) - abc
+            tamanhos = (k - ab - ac - abc, k - ab - bc - abc, k - ac - bc - abc, ab, ac, bc, abc)
+            s3 += _trio_premia_junto(tamanhos, m, sd, total)
+        if n <= 3 or s3 <= 0.0005:
+            return min(teto - s2 + s3, teto), "combinatorio"
+    return min(qualquer_medido(bilhetes, cfg, rng=rng), teto), "simulado"
+
+
+def _qualquer_espalhado(
+    n_jogos: int, p_uma: float, cfg: dict, rng: random.Random | None = None
+) -> tuple[float, str]:
+    """Prévia do painel, antes de gerar: chance de levar algo com N bilhetes
+    ESPALHADOS pelo gerador do app.
+
+    1. Tabela medida por enumeração exata (`carteira_espalhada`, Lotofácil
+       até 20 bilhetes): média de vários lotes, então não depende da sorte de
+       um lote só.
+    2. Fora dela: monta um lote de prévia com o mesmo motor (semente fixa por
+       N, então o painel não muda a cada consulta) e mede com `chance_lote`.
+    3. Acima do teto do /generate (200), montar a prévia custaria O(N²) à toa:
+       cai no independente, que nunca superestima."""
+    tabela = cfg.get("carteira_espalhada") or {}
     if n_jogos in tabela:
         return tabela[n_jogos], "enumerado"
-    if bilhetes is not None:
-        return min(qualquer_medido(bilhetes, cfg, rng=rng), teto), "simulado"
     if n_jogos <= 1:
-        return teto, "exato"
-
-    # `/odds/carteira` aceita N até 100.000 (histórico, para outros usos), mas
-    # gerar um lote de prévia com "espalhar" é O(N²) (generator.gerar) — em
-    # N=1000 já são ~47s. `/generate` trava em 200 jogos (vercel.json,
-    # maxDuration=60s); acima disso não vale a pena arriscar montar prévia
-    # nenhuma, então cai no independente (o piso, nunca superestima).
+        return n_jogos * p_uma, "exato"
     if n_jogos > 200:
         return 1 - (1 - p_uma) ** n_jogos, "independente"
-
-    preview_rng = random.Random(90_000 + n_jogos)  # estável entre consultas do mesmo N
+    preview_rng = random.Random(90_000 + n_jogos)
     preview = gerar(
         [], "aleatorio", n_jogos, cfg["escolher"], False, loteria=cfg["code"],
         espalhar=True, rng=preview_rng,
     )
-    preview_bilhetes = [set(j["dezenas"]) for j in preview]
-    if _overlap_maximo(preview_bilhetes) <= limiar:
-        return teto, "exato"
-    return min(qualquer_medido(preview_bilhetes, cfg, rng=preview_rng), teto), "simulado"
+    return chance_lote([set(j["dezenas"]) for j in preview], cfg, rng=preview_rng)
 
 
 def odds_carteira(
@@ -493,10 +588,12 @@ def odds_carteira(
     verdadeiro é o da união, min(1, N·p), atingido quando nenhum par pode
     premiar no mesmo sorteio (ver `limiar_sobreposicao`).
 
-    Com `espalhar=True` devolvemos o número correspondente ao que o app
-    realmente gera — antes esta função ignorava a opção, e a tela mostrava o
-    valor de bilhetes soltos mesmo com "espalhar" ligado. O retorno médio é o
-    mesmo nos dois casos."""
+    Sem `bilhetes` é a prévia do painel: com `espalhar=True`, o número do que
+    o gerador entrega espalhando; sem, o de bilhetes soltos. Com `bilhetes`
+    (os jogos de verdade, vindos do /generate), `qualquer` é a chance DESTE
+    lote, seja qual for a estratégia: com Atrasados na Lotofácil, por
+    exemplo, os jogos repetem as mesmas dezenas e a chance real fica bem
+    abaixo da prévia. O retorno médio é o mesmo em todos os casos."""
     cfg = lotteries.get_loteria(loteria)
     base = odds(cfg["escolher"], cfg["preco"], loteria)
     faixas = {}
@@ -504,8 +601,10 @@ def odds_carteira(
         p = 1 - (1 - f["prob"]) ** n_jogos
         faixas[nome] = {"prob": p, "one_in": _um_em(p)}
     p_uma = sum(f["prob"] for f in base["faixas"].values())
-    if espalhar and n_jogos > 1:
-        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg, bilhetes=bilhetes, rng=rng)
+    if bilhetes is not None and n_jogos > 1:
+        qualquer, metodo = chance_lote(bilhetes, cfg, rng=rng)
+    elif espalhar and n_jogos > 1:
+        qualquer, metodo = _qualquer_espalhado(n_jogos, p_uma, cfg, rng=rng)
     else:
         qualquer, metodo = 1 - (1 - p_uma) ** n_jogos, "independente"
     solto = 1 - (1 - p_uma) ** n_jogos
@@ -514,6 +613,7 @@ def odds_carteira(
         "dezenas": cfg["escolher"],
         "custo_estimado": round(n_jogos * cfg["preco"], 2),
         "espalhar": bool(espalhar and n_jogos > 1),
+        "lote": bilhetes is not None,  # True: `qualquer` é a chance dos jogos gerados
         "metodo": metodo,
         "faixas": faixas,
         "qualquer": {

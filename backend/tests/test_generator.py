@@ -1,6 +1,7 @@
 import random
+from itertools import combinations
 
-from app import generator, lotteries
+from app import db, generator, lotteries
 
 DRAWS = [
     {"concurso": i, "data": f"2024-01-{i:02d}", "dezenas": sorted(random.Random(i).sample(range(1, 61), 6))}
@@ -285,22 +286,48 @@ def test_zona_gratuita_da_mega_fura_em_lotes_grandes():
 
 
 def test_odds_carteira_mega_nao_superestima_alem_da_zona_gratuita():
-    """O bug: com bilhetes reais cuja sobreposição já ultrapassa o limiar, o
-    código antigo continuava devolvendo 'exato' = N*p — superestimando a
-    chance real em ~0,15pp num lote de 200 (contra simulação de 3 milhões de
-    sorteios). Agora tem que medir, nunca devolver mais que o teto de Boole,
-    e não pode mais alegar 'exato'."""
+    """Com bilhetes reais que já passam do limiar, não pode alegar o teto
+    ('exato' = N*p). Na Mega a conta é exata por inclusão-exclusão: premiar
+    junto é tão raro que S1 − S2 + S3 fica a menos de 0,02 ponto da verdade."""
     p_uma = generator.odds(6, loteria="mega")["qualquer"]["prob"]
     jogos = generator.gerar([], "aleatorio", 100, 6, False, loteria="mega", espalhar=True, rng=random.Random(7))
     bilhetes = [set(j["dezenas"]) for j in jogos]
     r = generator.odds_carteira(100, "mega", espalhar=True, bilhetes=bilhetes, rng=random.Random(1))
-    assert r["metodo"] == "simulado"
+    assert r["metodo"] == "combinatorio" and r["lote"] is True
     teto = 100 * p_uma
-    assert r["qualquer"]["prob"] <= teto + 1e-12, "nunca pode superar o teto de Boole (N*p)"
-    # a chance medida tem que ficar perto do teto (a correção é pequena aqui:
-    # só ~10% dos pares excedem o limiar, e cada um custa muito pouco), não
-    # despencar como despencaria uma correção de 2ª ordem mal calibrada.
-    assert teto * 0.9 < r["qualquer"]["prob"] <= teto
+    assert teto * 0.9 < r["qualquer"]["prob"] < teto
+
+
+def test_painel_da_mega_nao_inverte_o_espalhar():
+    """Bug real: com 40 e 50 bilhetes a prévia vinha de uma simulação cujo
+    ruído (±0,05 ponto) é maior que o efeito do Espalhar na Mega, e o painel
+    mostrava o Espalhar REDUZINDO a chance. Conta exata: nunca fica abaixo
+    dos bilhetes soltos nem acima do teto."""
+    p_uma = generator.odds(6, loteria="mega")["qualquer"]["prob"]
+    for n in (40, 50, 100, 200):
+        r = generator.odds_carteira(n, "mega", espalhar=True)
+        assert r["metodo"] in ("exato", "combinatorio"), n
+        assert r["qualquer_solto"]["prob"] < r["qualquer"]["prob"] <= n * p_uma, n
+
+
+def test_chance_lote_bate_com_a_enumeracao_completa():
+    """Numa loteria pequena dá para listar todos os sorteios: com até 3
+    bilhetes a inclusão-exclusão é exata; com mais, a simulação fica perto."""
+    mini = {
+        "code": "mini", "nome": "Mini", "min_num": 1, "max_num": 14, "total": 14,
+        "escolher": 5, "sorteadas": 5, "faixas": {3: "terno", 4: "quadra", 5: "quina"},
+    }
+    sorteios = [set(c) for c in combinations(range(1, 15), 5)]
+    rng = random.Random(5)
+    for n, lotes in ((2, 20), (3, 20), (5, 3)):
+        for _ in range(lotes):
+            lote = [set(rng.sample(range(1, 15), 5)) for _ in range(n)]
+            real = sum(any(len(b & s) >= 3 for b in lote) for s in sorteios) / len(sorteios)
+            q, metodo = generator.chance_lote(lote, mini, rng=random.Random(1))
+            if n <= 3:
+                assert metodo in ("exato", "combinatorio") and abs(q - real) < 1e-12
+            else:
+                assert metodo == "simulado" and abs(q - real) < 0.01
 
 
 def test_odds_carteira_respeita_zona_gratuita_com_bilhetes_reais():
@@ -330,14 +357,52 @@ def test_odds_carteira_lotofacil_alem_da_tabela_ainda_mostra_ganho_real():
     )
 
 
-def test_odds_carteira_prioriza_tabela_medida_mesmo_com_bilhetes_reais():
-    """A tabela por enumeração exata é mais precisa que simular sobre um lote
-    específico — tem que vencer mesmo quando `bilhetes` reais são passados."""
+def test_odds_carteira_com_bilhetes_descreve_o_lote():
+    """Sem bilhetes, a prévia da Lotofácil vem da tabela medida (média de
+    vários lotes). Com os jogos gerados de verdade, o número passa a ser o
+    DESTE lote — a tabela fica perto, mas não é o lote."""
+    previa = generator.odds_carteira(12, "lofa", espalhar=True)
+    assert previa["metodo"] == "enumerado" and previa["lote"] is False
+    assert previa["qualquer"]["prob"] == lotteries.LOTERIAS["lofa"]["carteira_espalhada"][12]
+
     jogos = generator.gerar([], "aleatorio", 12, 15, False, loteria="lofa", espalhar=True, rng=random.Random(3))
     bilhetes = [set(j["dezenas"]) for j in jogos]
-    r = generator.odds_carteira(12, "lofa", espalhar=True, bilhetes=bilhetes)
-    assert r["metodo"] == "enumerado"
-    assert r["qualquer"]["prob"] == lotteries.LOTERIAS["lofa"]["carteira_espalhada"][12]
+    r = generator.odds_carteira(12, "lofa", espalhar=True, bilhetes=bilhetes, rng=random.Random(1))
+    assert r["metodo"] == "simulado" and r["lote"] is True
+    assert abs(r["qualquer"]["prob"] - previa["qualquer"]["prob"]) < 0.03
+
+
+def test_atrasados_na_lotofacil_mostra_a_chance_real_do_lote():
+    """Bug real: o painel supõe jogos ao acaso. Com Atrasados na Lotofácil os
+    jogos repetem as mesmas dezenas atrasadas, e com 6 jogos sem Espalhar a
+    chance real de levar algo fica uns 4 pontos abaixo da prévia (~44,9%
+    contra ~48,9%). Com os bilhetes de verdade, o número tem de cair."""
+    historico = db.load_bundled_seed("lofa")
+    jogos = generator.gerar(historico, "atrasados", 6, 15, False, loteria="lofa", espalhar=False, rng=random.Random(4))
+    bilhetes = [set(j["dezenas"]) for j in jogos]
+    r = generator.odds_carteira(6, "lofa", espalhar=False, bilhetes=bilhetes, rng=random.Random(1))
+    assert r["qualquer"]["prob"] < r["qualquer_solto"]["prob"] - 0.01
+
+
+def test_gerar_resume_o_historico_uma_vez_e_da_o_mesmo_jogo(monkeypatch):
+    """Frequência/balanceado/atrasados recontavam o histórico inteiro a cada
+    candidato (até 120 por bilhete com o Espalhar). Agora é uma vez por
+    pedido — e o jogo gerado é o mesmo de antes para a mesma semente."""
+    historico = db.load_bundled_seed("mega")
+    numeros = lotteries.numbers(lotteries.LOTERIAS["mega"])
+    contagens = generator._freq_counts(historico)
+    assert generator.frequencia(random.Random(9), historico, 6, numeros) == generator.frequencia(
+        random.Random(9), historico, 6, numeros, counts=contagens
+    )
+    assert generator.balanceado(random.Random(9), historico, 6, numeros) == generator.balanceado(
+        random.Random(9), historico, 6, numeros, counts=contagens
+    )
+
+    chamadas = []
+    original = generator._freq_counts
+    monkeypatch.setattr(generator, "_freq_counts", lambda d: chamadas.append(1) or original(d))
+    generator.gerar(historico, "frequencia", 20, 6, False, loteria="mega", espalhar=True, rng=random.Random(2))
+    assert len(chamadas) == 1
 
 
 def test_odds_carteira_nao_tenta_gerar_previa_gigante():

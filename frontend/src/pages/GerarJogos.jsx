@@ -147,6 +147,13 @@ export default function GerarJogos() {
         `entre as mesmas combinações possíveis de qualquer jeito. É preferência de formato, ` +
         `não vantagem.`
 
+  // O Espalhar só existe entre 2+ bilhetes simples do mesmo pedido; fora
+  // disso (1 jogo, aposta múltipla) grava null = "não se aplica", para não
+  // registrar "desligado" onde a opção nem tinha efeito.
+  function espalharDoLote() {
+    return result.jogos.length > 1 && result.dezenas === cfg.escolher ? Boolean(result.espalhar) : null
+  }
+
   function salvar(i, jogo) {
     if (!concursoSalvar) return
     addBet({
@@ -154,6 +161,7 @@ export default function GerarJogos() {
       concurso: concursoSalvar,
       origem: 'app',
       estrategia: result.estrategia,
+      espalhar: espalharDoLote(),
       dezenas: jogo.dezenas,
     })
     setSalvos((s) => ({ ...s, [i]: concursoSalvar }))
@@ -164,6 +172,7 @@ export default function GerarJogos() {
   function salvarTodos() {
     if (!concursoSalvar || !result) return
     const novos = { ...salvos }
+    const espalhar = espalharDoLote()
     for (const [i, jogo] of result.jogos.entries()) {
       if (novos[i]) continue
       addBet({
@@ -171,6 +180,7 @@ export default function GerarJogos() {
         concurso: concursoSalvar,
         origem: 'app',
         estrategia: result.estrategia,
+        espalhar,
         dezenas: jogo.dezenas,
       })
       novos[i] = concursoSalvar

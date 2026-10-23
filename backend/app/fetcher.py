@@ -1,10 +1,21 @@
-"""Busca de resultados nas APIs públicas.
+"""Busca de resultados.
 
-Fonte principal: API da Caixa (a mesma usada pelo site oficial de loterias).
-Fallback: api.guidi.dev.br, que espelha o mesmo formato de payload.
+Duas famílias de fonte:
+
+- **API da Caixa** (fallback: api.guidi.dev.br, mesmo formato de payload):
+  resultado oficial minutos após o sorteio, com data e prêmio do próximo
+  concurso. Só responde a quem tem IP residencial no Brasil — a Caixa recusa
+  o Vercel, e a guidi passou a aceitar apenas IPs brasileiros em 12/07/2026.
+  Quem a usa é o navegador do usuário (Sorteios → /import-payloads) e o
+  seed_turso.py rodado de casa (classe Fetcher abaixo).
+- **Espelhos no GitHub** (ESPELHOS): o histórico completo em JSON, atualizado
+  todo dia por GitHub Actions a partir da própria API da Caixa. O
+  raw.githubusercontent.com responde de qualquer lugar, então é a fonte do
+  servidor (/sync e o cron diário).
 """
 
 import asyncio
+import time
 from datetime import datetime
 
 import httpx
@@ -13,13 +24,27 @@ from . import lotteries
 
 CAIXA_API = "https://servicebus2.caixa.gov.br/portaldeloterias/api"
 GUIDI_API = "https://api.guidi.dev.br/loteria"
-# Espelho estático no GitHub (formato idêntico ao da Caixa), atualizado por um
-# robô/cron. É a única fonte que funciona a partir de um datacenter (Vercel),
-# já que a Caixa e a guidi bloqueiam IPs que não sejam residenciais.
-MAICKON_BASES = {
-    "megasena": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena",
-    "lotofacil": "https://raw.githubusercontent.com/maickon/free-apiloterias/master/database/lotofacil",
+
+# Espelhos por slug da loteria. O primeiro é o principal; os demais completam
+# o que ele ainda não tiver. Conferidos em 23/10/2026: idênticos ao histórico
+# embutido em todos os concursos em comum (2.994 da Mega, 3.657 da Lotofácil),
+# sem buracos na numeração. O maickon/free-apiloterias, usado antes, parou em
+# 09/04/2026.
+ESPELHOS: dict[str, list[str]] = {
+    "megasena": [
+        "https://raw.githubusercontent.com/eitchtee/loterias.json/main/data/mega-sena.json",
+    ],
+    "lotofacil": [
+        "https://raw.githubusercontent.com/eitchtee/loterias.json/main/data/lotofacil.json",
+        "https://raw.githubusercontent.com/rjaugusto/lotofacil-dados/main/historico.json",
+    ],
 }
+ESPELHO_TIMEOUT = httpx.Timeout(30.0)
+# O /sync roda em lotes (o frontend repete a chamada até remaining == 0) e,
+# sem cache, cada lote baixaria de novo 0,5 a 2 MB. O próprio raw do GitHub
+# já guarda o arquivo por 5 minutos, então 2 minutos aqui não atrasam nada.
+ESPELHO_CACHE_SEGUNDOS = 120
+_cache_espelhos: dict[str, tuple[float, list[dict], list[str]]] = {}
 
 HEADERS = {
     "Accept": "application/json",
@@ -53,6 +78,7 @@ def parse_payload(data: dict, loteria: str = "mega") -> dict:
         data.get("listaDezenas")
         or data.get("dezenas")
         or data.get("dezenasSorteadasOrdemSorteio")
+        or data.get("resultado")  # espelho eitchtee
     )
     data_apuracao = _to_iso(data.get("dataApuracao") or data.get("data"))
     if not numero or not dezenas_raw or not data_apuracao:
@@ -76,8 +102,9 @@ def parse_payload(data: dict, loteria: str = "mega") -> dict:
 
 
 class Fetcher:
-    """Cliente com fallback: se a Caixa falhar, passa a usar a guidi
-    nas próximas chamadas da mesma sessão de sincronização."""
+    """Cliente da Caixa com fallback na guidi: se a Caixa falhar, passa a usar
+    a guidi nas próximas chamadas da mesma sessão. Só funciona de IP
+    residencial brasileiro — por isso só o seed_turso.py o usa."""
 
     def __init__(self, client: httpx.AsyncClient, loteria: str = "mega"):
         self.client = client
@@ -90,14 +117,7 @@ class Fetcher:
         guidi_base = f"{GUIDI_API}/{self.fonte}"
         caixa = f"{caixa_base}/{concurso}" if concurso else caixa_base
         guidi = f"{guidi_base}/{concurso}" if concurso else f"{guidi_base}/ultimo"
-        # Caixa/guidi primeiro (mais frescos, funcionam em IP residencial);
-        # o espelho do GitHub por último, como rede de segurança do Vercel.
-        base = [caixa, guidi] if self.caixa_ok else [guidi, caixa]
-        maickon_base = MAICKON_BASES.get(self.fonte)
-        if maickon_base:
-            m = f"{maickon_base}/{concurso}.json" if concurso else f"{maickon_base}/_ultimo.json"
-            base.append(m)
-        return base
+        return [caixa, guidi] if self.caixa_ok else [guidi, caixa]
 
     async def fetch(self, concurso: int | None = None) -> dict:
         last_error: Exception | None = None
@@ -140,3 +160,77 @@ async def fetch_many(
 
         await asyncio.gather(*(one(n) for n in concursos))
     return results, errors
+
+
+def ler_espelho(dados, loteria: str = "mega") -> tuple[list[dict], int]:
+    """Converte o JSON de um espelho em sorteios no formato interno.
+
+    Aceita os dois formatos em uso: lista de {concurso, data, resultado}
+    (eitchtee) e {historico: [{numero, dataApuracao, dezenas}]} (rjaugusto).
+    Cada registro passa pelo mesmo parse_payload das fontes oficiais.
+    Devolve (sorteios, quantos registros inválidos foram ignorados)."""
+    registros = dados.get("historico") if isinstance(dados, dict) else dados
+    if not isinstance(registros, list):
+        raise FetchError("espelho em formato desconhecido")
+    sorteios: list[dict] = []
+    invalidos = 0
+    for r in registros:
+        try:
+            s = parse_payload(r, loteria)
+        except Exception:  # noqa: BLE001 - um registro estragado não derruba o espelho
+            invalidos += 1
+            continue
+        sorteios.append({"concurso": s["concurso"], "data": s["data"], "dezenas": s["dezenas"]})
+    return sorteios, invalidos
+
+
+async def fetch_espelhos(loteria: str = "mega") -> tuple[list[dict], list[str]]:
+    """Baixa os espelhos da loteria e junta tudo num histórico só.
+
+    Devolve (sorteios em ordem de concurso, avisos). Um concurso que dois
+    espelhos trazem com dezenas ou data diferentes fica de fora: melhor faltar
+    do que gravar o errado — ele entra pela Caixa, no navegador."""
+    cfg = lotteries.get_loteria(loteria)
+    agora = time.monotonic()
+    em_cache = _cache_espelhos.get(cfg["code"])
+    if em_cache and agora - em_cache[0] < ESPELHO_CACHE_SEGUNDOS:
+        return em_cache[1], em_cache[2]
+
+    urls = ESPELHOS.get(cfg["fonte"], [])
+
+    async def baixar(client: httpx.AsyncClient, url: str):
+        resp = await client.get(url, headers=HEADERS, timeout=ESPELHO_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+
+    async with httpx.AsyncClient() as client:
+        respostas = await asyncio.gather(*(baixar(client, u) for u in urls), return_exceptions=True)
+
+    avisos: list[str] = []
+    juntos: dict[int, dict] = {}
+    divergentes: set[int] = set()
+    for url, resp in zip(urls, respostas):
+        dono = url.split("/")[3]  # raw.githubusercontent.com/<dono>/<repo>/...
+        try:
+            if isinstance(resp, Exception):
+                raise resp
+            sorteios, invalidos = ler_espelho(resp, cfg["code"])
+        except Exception as e:  # noqa: BLE001 - um espelho fora do ar não derruba os outros
+            avisos.append(f"espelho {dono}: {e}")
+            continue
+        if invalidos:
+            avisos.append(f"espelho {dono}: {invalidos} registro(s) inválido(s) ignorado(s)")
+        for s in sorteios:
+            atual = juntos.setdefault(s["concurso"], s)
+            if atual["dezenas"] != s["dezenas"] or atual["data"] != s["data"]:
+                divergentes.add(s["concurso"])
+    for n in divergentes:
+        del juntos[n]
+    if divergentes:
+        avisos.append(
+            f"espelhos divergem em {len(divergentes)} concurso(s), ignorados: {sorted(divergentes)[:5]}"
+        )
+    sorteios = sorted(juntos.values(), key=lambda s: s["concurso"])
+    if sorteios:  # só guarda sucesso: uma falha de rede não fica presa por 2 minutos
+        _cache_espelhos[cfg["code"]] = (agora, sorteios, avisos)
+    return sorteios, avisos

@@ -1,0 +1,1277 @@
+{
+ "versao": 1,
+ "gerado_em": "2026-10-23",
+ "metodo": "Jogos salvos antes de o app gravar o Espalhar. Lote = jogos do app com mesmo concurso e estratégia salvos a menos de 2 minutos um do outro. Para cada lote, o motor do app gerou 400 lotes do mesmo tamanho e estratégia com o Espalhar ligado e 400 desligado; o valor é o mais verossímil dado o maior e o médio número de dezenas em comum entre os jogos do lote. Lotes de 1 jogo, da Fábrica e jogos manuais ficam de fora (a opção não se aplica). Os lotes de 22/10/2026 foram confirmados pelo usuário.",
+ "jogos": [
+  {
+   "id": "530dd66f-a9b6-4f3e-9a92-d1bdf16d777d",
+   "loteria": "mega",
+   "concurso": 3041,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "906675e7-b64b-481c-9552-979ca2b2a70a",
+   "loteria": "mega",
+   "concurso": 3041,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "521ff0cb-5d40-47d7-a68a-92092a172a0a",
+   "loteria": "mega",
+   "concurso": 3041,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "db89084f-6b93-45b9-956f-83725eff2c27",
+   "loteria": "mega",
+   "concurso": 3041,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "31365a1a-75d5-4fae-924b-ca6796c879b0",
+   "loteria": "mega",
+   "concurso": 3041,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "5259003d-cd3b-4075-8496-79d9b75796c9",
+   "loteria": "mega",
+   "concurso": 3059,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.9,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a48e6b4f-35c6-41f5-8a69-ccd53514ac22",
+   "loteria": "mega",
+   "concurso": 3059,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.9,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "781a8a04-a589-4159-8e72-67d5664cc040",
+   "loteria": "mega",
+   "concurso": 3059,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.9,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0fb66bdc-0faa-4ce1-a69d-4999368127f8",
+   "loteria": "mega",
+   "concurso": 3068,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "14faacf9-d4aa-40b7-9359-704edc2f2e1a",
+   "loteria": "mega",
+   "concurso": 3068,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "cc8c9c97-4235-4032-8e70-68e2ad59d9cc",
+   "loteria": "mega",
+   "concurso": 3068,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "87175df1-3054-4871-8aa3-66a84fff7897",
+   "loteria": "mega",
+   "concurso": 3068,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "f5b905c0-1b86-43a0-9e66-92632e7ecc59",
+   "loteria": "mega",
+   "concurso": 3070,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "4ee9ce51-4a19-472b-b706-865e041912b1",
+   "loteria": "mega",
+   "concurso": 3070,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "391058e3-6689-487a-befe-50e907d1f0ec",
+   "loteria": "mega",
+   "concurso": 3070,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c1b2a00d-4a32-44d4-865e-12609f705993",
+   "loteria": "mega",
+   "concurso": 3071,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "f42d0bd7-5567-44c9-bf8a-9ea0369baece",
+   "loteria": "mega",
+   "concurso": 3071,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "32ccc2aa-6af0-4100-a882-d088c51792a9",
+   "loteria": "mega",
+   "concurso": 3071,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.89,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "eb5e3961-6252-4412-a635-94b3e5f283c0",
+   "loteria": "mega",
+   "concurso": 3072,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "3a653afd-ce63-47d0-8b46-a066a0cb9777",
+   "loteria": "mega",
+   "concurso": 3072,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "6cfc2e64-d0e5-4fca-975f-cfd81b0877ab",
+   "loteria": "mega",
+   "concurso": 3072,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "dfe58290-00bf-49a7-b28d-e3a3f2913711",
+   "loteria": "mega",
+   "concurso": 3072,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "2aaf7c4a-9e46-45e8-85f7-6e1be33c51db",
+   "loteria": "mega",
+   "concurso": 3072,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "8a0344b4-d14f-4829-be31-f1c1513c8507",
+   "loteria": "mega",
+   "concurso": 3073,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "b11da267-980b-4b6d-a681-ff8a0e6b4107",
+   "loteria": "mega",
+   "concurso": 3073,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "f28509dd-2603-4820-8b03-bb1479d2590e",
+   "loteria": "mega",
+   "concurso": 3073,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "92b2d90c-be5a-442d-8407-e79863336978",
+   "loteria": "mega",
+   "concurso": 3073,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "604a999d-807e-4f47-a79f-895362b2cd4e",
+   "loteria": "mega",
+   "concurso": 3073,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "376f46c6-ab1a-4f80-b345-beb8d1c46a65",
+   "loteria": "lofa",
+   "concurso": 3745,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.97,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "18fda0f8-fd8d-4c05-aaa9-f3c6ef1ab216",
+   "loteria": "lofa",
+   "concurso": 3745,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.97,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "2a84ec7e-6990-462b-be55-e74793c6555e",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "8e37214c-37ed-487a-ae6c-447bc529aff9",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a5c14e85-dd53-4b6f-b114-ec349f120839",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c4d139b3-9d40-4980-aa25-44c994625736",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "dfacb3d1-2e10-44dd-86f4-9c2fe71031f7",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "8d0229eb-2a51-481a-9a25-48c685891530",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "fde499f1-569c-47d3-aba9-23ebbf29037e",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "10da0021-f1ff-467b-9d22-36862d23982c",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "9c243b65-c06d-416f-b1a0-3ad8c67af1ad",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "057fb6f7-1bf8-4eee-8ad9-42e37e65cbeb",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e38e444e-5789-4f24-87e7-4820a910d11d",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0edc1bf4-d925-4f11-80b9-3e8bfe05f39e",
+   "loteria": "lofa",
+   "concurso": 3746,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "8fdaadbd-f4a2-4379-8a24-9c5188971389",
+   "loteria": "lofa",
+   "concurso": 3770,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.94,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "8ea68c4e-93f2-4e95-bd6e-3567af2d95a7",
+   "loteria": "lofa",
+   "concurso": 3770,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.94,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "ec0d4100-0201-4abf-b948-4f75ae3689d9",
+   "loteria": "lofa",
+   "concurso": 3770,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.94,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "350fcbf0-0da0-4adc-ac14-4100c5417e8a",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "3adddb72-d9d7-4c62-a0cf-330152e1f9d9",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0e906bec-5c82-4816-af95-1c5a3f5005a0",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a04601f5-63a8-4c3b-bb0d-042e1e8a1706",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e59e2621-f97a-494e-9d32-17c264f16d4a",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "2f6e95d1-3f92-4351-8b18-4522c2153efc",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c5a02159-3a48-45b1-a569-437243c6d54b",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "839049c9-4f9e-4ff1-ad39-27d9076c9d73",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "6eb83607-0a29-431c-933f-fbd56a03a4e8",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "acdb8324-ec4d-4245-9874-2042819b9038",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a3174114-30bb-4fbe-8df6-9e787dedb302",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e7195ead-8393-4705-9a81-a035a0ba2dbb",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "fb78535a-bd23-4c0e-85d6-d700a2c5a794",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "bacf8c59-3d50-498a-8ba3-e563fc72ca05",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "22a2f8c8-1982-4a95-a70e-67f26dd3da77",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "144deae8-b712-4365-b2e3-e1c7b0fe78a9",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "90159eda-0cdf-4041-bdba-88d9d4eaba53",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "75c8d87d-9103-4212-a6d4-e43b6490cdb1",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "062ded36-cd3b-4dbd-8e9b-e421fac4d74d",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "334bca83-db9a-4b1a-89fd-854c38fb4ba1",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "084de189-3337-4034-9275-cfa26da6b043",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c61243de-2848-4788-a209-296b14a59743",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "bbecf251-e1e9-4a55-9249-3f836508c4a1",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "5ce9fe50-f893-46c0-9d02-dec0462afa69",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "6a485902-803b-4716-b7fa-09bce0d5b595",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "3ab6ca65-e8c6-4c9a-a378-a18844b70bb5",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "5f951072-b0da-4f1b-a2ae-5abdd2e354b1",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "5488f0b1-5d10-40c3-9f32-65c9adcb4b05",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "b70faaac-9582-45fb-9b8a-bd33c2401308",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "07b2868f-179c-4496-aac7-f177301d5854",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "19b92f24-d084-4e67-a8fe-7131804d2eeb",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "cb37fbc9-545d-4561-9c89-a2d7be03f52f",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "2aa178f3-de08-4c22-8a72-beadad38ad04",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "9964e783-5f64-4046-9ca0-73ae654fe554",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "1fc6bccd-4c50-4d1b-937e-022f74acd857",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "4625551a-d1d7-423c-98e4-006e6e50303b",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a0c25ed4-fb2f-43b6-b9cc-be74196ace1f",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "3ee663e6-be8b-42c6-b8ce-9800ebdfdaf9",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "db9622df-1084-4de4-b113-90d1cdf9c39e",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "eb10cad9-4acf-4de6-b0d1-c024856ce3a5",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "655d9fb9-0414-4c9b-a296-f851b797722f",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "b5c38553-9a83-4ce2-aabd-9eb08565119a",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "ff556130-b2e9-41d2-94f0-31eef60fc690",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "f2e6ab73-8e87-4615-81e0-cd9e59d47e1c",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a4895b66-3e45-48a3-937c-35a3a285ced1",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "36f96b86-0c11-4492-aa42-586da33c1d94",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e1033adc-20f4-4378-8230-3a9833f6321c",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a13db529-641b-4aea-ba7c-5718d5ff8789",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "29581e97-a79f-4807-bfbf-fd9bae4381ce",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "881cf70b-8513-4b90-80af-4d79c50111c3",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 1.0,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a099fe29-f394-498a-9bc0-9654d68edf40",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "9772f9a6-7475-488e-9d73-658d3d2ae29d",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e74a4e79-34f3-4167-8438-f423558ee156",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c472429f-0b78-4dce-a4fe-ca09b844bc24",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "e29024d1-37f7-4a3d-9032-322234c56634",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "58ee7727-07f1-4106-9718-d83e722f6bce",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0f19a49d-910c-4aee-82e8-96b7c5bb8238",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "81b10b7e-e444-4a13-85d9-991cadfdcf4e",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "1a2d5c25-9b1a-4301-8092-8e2284e4edb5",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0cf8be50-eb76-44b9-9ecf-401cff5ae11e",
+   "loteria": "lofa",
+   "concurso": 3780,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "abd70766-8757-40ba-862b-bae955ecd700",
+   "loteria": "lofa",
+   "concurso": 3806,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.97,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "05bdf365-d68c-46be-bf5f-554fa8637de1",
+   "loteria": "lofa",
+   "concurso": 3806,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.97,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "1d5d2d4e-ec56-4ad4-92e5-d8b1c19f697b",
+   "loteria": "lofa",
+   "concurso": 3806,
+   "estrategia": "balanceado",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.97,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c294092b-88f3-4c6e-ab62-6418daa8966f",
+   "loteria": "lofa",
+   "concurso": 3807,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "da15ed21-c42a-40dc-855e-3017c599d1ec",
+   "loteria": "lofa",
+   "concurso": 3807,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "c7fce756-9067-4ed7-abfa-5e38be042dc9",
+   "loteria": "lofa",
+   "concurso": 3807,
+   "estrategia": "frequencia",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "cbc4b465-9ddb-47ba-8824-f25e65502167",
+   "loteria": "lofa",
+   "concurso": 3808,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.98,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "1a5c3c45-94f0-4c4f-b4c8-5946692eacd0",
+   "loteria": "lofa",
+   "concurso": 3808,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.98,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "15ac3967-d651-4934-860f-c9bbd08d6662",
+   "loteria": "lofa",
+   "concurso": 3808,
+   "estrategia": "aleatorio",
+   "espalhar": true,
+   "deduzido": true,
+   "confianca": 0.98,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "f9ed3702-f030-4abb-8bb1-a9af68e11c9a",
+   "loteria": "lofa",
+   "concurso": 3809,
+   "estrategia": "frequencia",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.96,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "dbfe9709-7a34-4afb-9808-8746ddb44e7e",
+   "loteria": "lofa",
+   "concurso": 3809,
+   "estrategia": "frequencia",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.96,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "b1a3d94d-afe5-4b9a-a600-1d17d6e64e2d",
+   "loteria": "lofa",
+   "concurso": 3809,
+   "estrategia": "frequencia",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.96,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "a29e2929-0240-4d78-9f07-a5caf108f5b3",
+   "loteria": "lofa",
+   "concurso": 3810,
+   "estrategia": "aleatorio",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "0d86958d-e202-42f5-a6b3-8e99789be376",
+   "loteria": "lofa",
+   "concurso": 3810,
+   "estrategia": "aleatorio",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "fc1d93d5-739d-4ae4-aceb-cc1375fa2a35",
+   "loteria": "lofa",
+   "concurso": 3810,
+   "estrategia": "aleatorio",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "f08a66e7-a69c-43e9-9e96-b2a02c75c9d8",
+   "loteria": "lofa",
+   "concurso": 3810,
+   "estrategia": "aleatorio",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "db46f87c-0da9-4e0e-bf51-27b508633bb5",
+   "loteria": "lofa",
+   "concurso": 3810,
+   "estrategia": "aleatorio",
+   "espalhar": false,
+   "deduzido": true,
+   "confianca": 0.99,
+   "fonte": "estudo de sobreposição"
+  },
+  {
+   "id": "1704dd25-f291-4f80-bf94-dde7c57559ce",
+   "loteria": "lofa",
+   "concurso": 3811,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "aedcfe2f-3171-4fd3-8995-296bab1565cf",
+   "loteria": "lofa",
+   "concurso": 3811,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "5b9dffa3-fbc7-4100-af20-fee2eccb1764",
+   "loteria": "lofa",
+   "concurso": 3811,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "904d576e-d9cb-47ca-bbac-4ee8d3e2a900",
+   "loteria": "lofa",
+   "concurso": 3811,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  },
+  {
+   "id": "19632454-24dd-40f0-b159-24bcd5d95b41",
+   "loteria": "lofa",
+   "concurso": 3811,
+   "estrategia": "balanceado",
+   "espalhar": false,
+   "deduzido": false,
+   "confianca": 1.0,
+   "fonte": "confirmado pelo usuário"
+  }
+ ]
+}

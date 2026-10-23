@@ -88,7 +88,7 @@ MEGA/
 │   ├── app/
 │   │   ├── main.py           # FastAPI, CORS, lifespan(init_db), monta rotas com e sem /api
 │   │   ├── db.py             # camada de banco DUAL: SQLite local OU Turso (libsql)
-│   │   ├── fetcher.py        # busca resultados: Caixa → guidi → espelho GitHub (maickon)
+│   │   ├── fetcher.py        # resultados: espelhos GitHub (servidor) + Caixa → guidi (seed_turso)
 │   │   ├── csv_utils.py      # parser de CSV (importação manual)
 │   │   ├── stats.py          # estatísticas básicas + raio-X
 │   │   ├── analysis.py       # métricas avançadas, faixas históricas, termômetro
@@ -117,32 +117,35 @@ MEGA/
 ### 3.1 O problema central
 
 A API oficial da Caixa (`servicebus2.caixa.gov.br/portaldeloterias/api/megasena`)
-e o fallback `api.guidi.dev.br` **bloqueiam requisições de IPs de datacenter**
-(retornam 403). Funcionam de IP residencial brasileiro (navegador do usuário),
-mas **não do Vercel**. Isso quebrou a sincronização em produção e guiou o design.
+recusa requisições do Vercel, e o fallback `api.guidi.dev.br` passou a aceitar
+**só IPs do Brasil** (12/07/2026). As duas funcionam do navegador do usuário
+(IP residencial brasileiro), mas **não do servidor**. Isso guiou o design.
 
-### 3.2 A cadeia de fontes (fetcher.py)
+### 3.2 As fontes (fetcher.py)
 
-Ordem de tentativa por concurso, com "stickiness" (se a Caixa falha uma vez na
-sessão de sync, as próximas já começam pelo fallback):
+1. **Espelhos no GitHub** — a fonte do servidor. Arquivos JSON com o
+   histórico completo, atualizados todo dia por GitHub Actions a partir da
+   própria API da Caixa; `raw.githubusercontent.com` responde de qualquer
+   lugar. Mega: `eitchtee/loterias.json` (`data/mega-sena.json`, ~01:00 UTC).
+   Lotofácil: o mesmo repositório (`data/lotofacil.json`) e, completando,
+   `rjaugusto/lotofacil-dados` (`historico.json`, ~12:00 UTC). Conferidos em
+   23/10/2026: idênticos ao seed em todos os concursos em comum, sem buracos.
+   `fetch_espelhos()` baixa todos, junta e **descarta concurso em que dois
+   espelhos divergem** (melhor faltar do que gravar errado). Cache de 2 min,
+   porque o `/sync` roda em lotes. (O `maickon/free-apiloterias`, usado antes,
+   parou em 09/04/2026.)
+2. **O navegador do usuário** — o frescor: ao abrir o app (em segundo plano,
+   no máximo a cada 20 min por loteria) e no botão "Sincronizar", o frontend
+   busca os concursos novos **direto da Caixa/guidi** e envia os payloads
+   brutos para `POST /api/import-payloads`, que valida com o mesmo
+   `parse_payload()` e grava. Traz o resultado minutos após o sorteio e a data
+   e o prêmio do próximo concurso. **Exige login**: gravar resultado sem
+   sessão permitiria a qualquer um sobrescrever o oficial.
+3. **`Fetcher` (Caixa → guidi)** — usado só pelo `seed_turso.py`, rodado da
+   máquina do usuário.
 
-1. **Caixa** (oficial, mais fresca) — só funciona em IP residencial;
-2. **guidi.dev.br** (espelho da Caixa) — idem;
-3. **maickon/free-apiloterias no GitHub raw** — espelho estático em
-   `raw.githubusercontent.com/maickon/free-apiloterias/master/database/megasena/{N}.json`
-   (e `_ultimo.json`), **formato idêntico ao payload da Caixa**. GitHub **não
-   bloqueia** datacenter → funciona no Vercel, mas o robô que o atualizava
-   também foi bloqueado pela Caixa (parou no concurso ~2995, abr/2026);
-4. **O navegador do usuário** (a fonte que resolve o frescor): ao clicar em
-   "Sincronizar", o frontend também busca os concursos novos **direto da
-   Caixa/guidi a partir do navegador** — o IP residencial do usuário não é
-   bloqueado — e envia os payloads brutos para `POST /api/import-payloads`,
-   onde o servidor valida com o mesmo `parse_payload()` e grava no banco.
-   Assim, cada visita do usuário atualiza o app até o concurso mais recente,
-   sem depender de nenhum espelho.
-
-`parse_payload()` normaliza qualquer uma das três para
-`{concurso:int, data:"YYYY-MM-DD", dezenas:[6 ints ordenados], proximo:{...}}`.
+`parse_payload()` normaliza todas para
+`{concurso:int, data:"YYYY-MM-DD", dezenas:[ints ordenados], proximo:{...}}`.
 
 ### 3.3 Histórico embutido (seed)
 
@@ -152,20 +155,26 @@ sessão de sync, as próximas já começam pelo fallback):
 - **Desenvolvimento local**: `init_db()` auto-carrega o seed se o banco estiver
   vazio (desligável com `MEGASENA_AUTOSEED=0`, usado nos testes).
 - **Produção**: o endpoint `/sync` usa o seed como fonte instantânea do volume
-  histórico (sem rede) e só busca da rede o que for **mais novo** que o seed.
+  histórico (sem rede) e completa com os espelhos o que for **mais novo**.
 
-### 3.4 Sincronização (`POST /api/sync?max_batch=200`)
+### 3.4 Sincronização (`POST /api/sync?max_batch=200` e `GET /api/cron/sync`)
 
 Incremental e em lotes (o frontend chama em loop até `remaining == 0`, exibindo
 progresso — isso respeita o `maxDuration` da função serverless):
 
-1. busca o "último" na cadeia de fontes → se **todas** falham, usa só o seed
-   (`_sync_from_seed`);
-2. calcula os concursos **faltantes ou sem data** (`concursos_com_data()`);
-3. resolve cada um: primeiro do seed (cópia local), depois da rede
-   (`fetch_many`, httpx assíncrono com semáforo de concorrência 8);
-4. grava via upsert (`INSERT OR REPLACE`) e retorna
-   `{source, latest_remote, added, remaining, total_local, proximo}`.
+1. junta os candidatos: seed embutido + espelhos (no concurso em comum, vale o
+   seed);
+2. separa os que o banco **não tem ou tem sem data** (`concursos_com_data()`)
+   — nunca sobrescreve um resultado já gravado, como o oficial que o navegador
+   trouxe da Caixa;
+3. grava até `max_batch` e retorna
+   `{source, latest_remote, added, remaining, total_local, errors, proximo}`.
+
+O mesmo roda **todo dia às 09:00 UTC** pelo Cron Jobs da Vercel
+(`vercel.json` → `GET /api/cron/sync`, as duas loterias, até ~45 s). Com a
+variável `CRON_SECRET` no projeto, só a chamada da Vercel
+(`Authorization: Bearer <segredo>`) passa; sem ela o endpoint fica aberto, o
+que é seguro — ele só acrescenta o que falta, vindo de fontes fixas.
 
 ### 3.5 Plano C — CSV manual (`POST /api/import-csv`)
 
@@ -228,7 +237,8 @@ do payload da fonte), atalhos, e estado de erro amigável se o backend não sobe
 ### 4.2 Sorteios
 Lista paginada dos concursos em cache (cards com bolas verdes), botão
 **Sincronizar sorteios** (loop de lotes com progresso "baixados X, faltam Y") e
-**Importar CSV**.
+**Importar CSV**. A mesma sincronização (`lib/sincronizar.js`) roda em segundo
+plano ao abrir cada loteria e avisa as telas abertas (`sorteios-atualizados`).
 
 ### 4.3 Estatísticas (carregada sob demanda — React.lazy, por causa do Recharts)
 - **Frequência por número** (barras, 60 números) com janelas: todos/100/50/25/10
@@ -295,9 +305,10 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/status` | `{total_draws, ultimo_local, proximo, db_backend}` |
 | `GET /api/draws?limit&offset` | lista paginada (desc) |
 | `GET /api/draws/{n}` | um concurso |
-| `POST /api/sync?max_batch=200` | sincronização incremental (ver §3.4) |
-| `POST /api/import-csv` | multipart CSV (plano C) |
-| `POST /api/import-payloads` | `{payloads:[<json bruto Caixa/guidi>]}` — enviados pelo navegador do usuário (§3.2 item 4) |
+| `POST /api/sync?max_batch=200` | sincronização incremental: seed + espelhos (ver §3.4) |
+| `GET /api/cron/sync` | a mesma, para as duas loterias — chamada pelo Cron Jobs da Vercel |
+| `POST /api/import-csv` | multipart CSV (plano C) — **exige login** |
+| `POST /api/import-payloads` | `{payloads:[<json bruto Caixa/guidi>]}` — enviados pelo navegador do usuário (§3.2 item 2) — **exige login** |
 | `GET /api/stats/frequency?window=0\|10\|25\|50\|100` | frequência + hot/cold |
 | `GET /api/stats/delay` | atraso atual por número + top 10 |
 | `GET /api/stats/parity` | pares×ímpares observado vs. teórico |
@@ -467,10 +478,11 @@ véspera (tipicamente 0–1 de 6 — o esperado ao acaso é 0,6).
 - **Variáveis de ambiente na Vercel**: `TURSO_DATABASE_URL` e
   `TURSO_AUTH_TOKEN` (sem elas o backend cai para SQLite em disco efêmero —
   os dados somem entre invocações; o status denuncia via `db_backend`).
-- Primeira carga de dados: botão **Sincronizar** no site (usa seed embutido +
-  espelho GitHub). Opcional: `backend/seed_turso.py` rodado da máquina do
-  usuário (IP residencial alcança a Caixa) para completar até o concurso mais
-  recente.
+- Primeira carga de dados: automática ao abrir o site (ou botão
+  **Sincronizar**), com seed embutido + espelhos GitHub; o cron diário mantém
+  em dia. Opcional: `backend/seed_turso.py` rodado da máquina do usuário (IP
+  residencial alcança a Caixa).
+- Variável opcional `CRON_SECRET`: restringe o `/api/cron/sync` à Vercel.
 - Cada push na branch dispara redeploy automático.
 
 ## 8. Rodando localmente e testes
@@ -493,10 +505,11 @@ Variáveis úteis: `MEGASENA_DB_PATH` (caminho do SQLite), `MEGASENA_AUTOSEED=0`
 
 ## 9. Limitações conhecidas e decisões de design
 
-1. **Frescor dos dados** depende de alguém abrir o site e clicar em
-   "Sincronizar" a partir de um IP residencial (a fase navegador→Caixa faz o
-   resto). Se as fontes oficiais bloquearem também CORS do navegador, restam:
-   espelho GitHub (defasado) e `seed_turso.py`/CSV manual.
+1. **Frescor dos dados**: o servidor depende dos espelhos (atualizados uma
+   vez por dia) e do cron diário; o resultado de minutos atrás só entra
+   quando alguém logado abre o site (fase navegador→Caixa). Se um espelho
+   parar, o outro e o navegador seguram; se a Caixa bloquear também o CORS
+   do navegador, restam os espelhos e `seed_turso.py`/CSV manual.
 2. **Apostas no localStorage**: não sincronizam entre aparelhos (mitigação:
    exportar/importar backup). Escolha deliberada para evitar auth/banco de
    dados de usuário.

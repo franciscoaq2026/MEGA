@@ -28,6 +28,13 @@ class BetIn(BaseModel):
     concurso: int = Field(ge=1)
     origem: str
     estrategia: str | None = None
+    # Espalhar no momento da geração: True/False num lote de 2+ bilhetes
+    # simples; None quando não se aplica (1 jogo, múltipla, Fábrica, manual)
+    # ou em jogos salvos antes de o campo existir.
+    espalhar: bool | None = None
+    # True quando o valor de `espalhar` veio do estudo de sobreposição feito
+    # depois (jogos salvos antes de o campo existir), não da hora de salvar.
+    espalhar_deduzido: bool | None = None
     dezenas: list[int]
     criado_em: str | None = None
 
@@ -61,6 +68,8 @@ class BetIn(BaseModel):
             "concurso": self.concurso,
             "origem": self.origem,
             "estrategia": self.estrategia,
+            "espalhar": self.espalhar,
+            "espalhar_deduzido": self.espalhar_deduzido if self.espalhar is not None else None,
             "dezenas": self.dezenas,
             "criado_em": self.criado_em or datetime.now(timezone.utc).isoformat(),
         }

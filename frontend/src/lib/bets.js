@@ -119,7 +119,7 @@ function novoId() {
   return `bet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, dezenas }) {
+export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, espalhar = null, dezenas }) {
   const bets = loadBets(loteria)
   const bet = {
     id: novoId(),
@@ -127,6 +127,7 @@ export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, 
     concurso: Number(concurso),
     origem, // 'manual' | 'app'
     estrategia,
+    espalhar, // true/false = como estava no lote; null = não se aplica
     dezenas: [...dezenas].sort((a, b) => a - b),
     criado_em: new Date().toISOString(),
   }

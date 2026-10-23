@@ -108,3 +108,95 @@ def test_validacao_dezenas():
         assert c.post("/api/bets", json={"concurso": 1, "origem": "manual", "dezenas": [1, 1, 2, 3, 4, 5]}, headers=h).status_code == 422
         # origem inválida
         assert c.post("/api/bets", json={"concurso": 1, "origem": "x", "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h).status_code == 422
+
+
+def test_espalhar_gravado_por_jogo():
+    """true/false voltam como foram salvos; ausente vira None (não se aplica)."""
+    with make_client() as c:
+        h = {"X-Session-Id": _login(c)}
+        base = {"concurso": 2800, "origem": "app", "estrategia": "aleatorio"}
+        c.post("/api/bets", json={**base, "id": "e1", "espalhar": True, "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h)
+        c.post("/api/bets", json={**base, "id": "e2", "espalhar": False, "dezenas": [7, 8, 9, 10, 11, 12]}, headers=h)
+        c.post("/api/bets", json={**base, "id": "e3", "dezenas": [13, 14, 15, 16, 17, 18]}, headers=h)
+        # o sync (caminho do celular/computador) preserva o campo
+        c.post(
+            "/api/bets/sync",
+            json={"bets": [{**base, "id": "e4", "espalhar": False, "dezenas": [19, 20, 21, 22, 23, 24]}]},
+            headers=h,
+        )
+        bets = {b["id"]: b for b in c.get("/api/bets", headers=h).json()["bets"]}
+        assert [bets[i]["espalhar"] for i in ("e1", "e2", "e3", "e4")] == [True, False, None, False]
+        # gravado na hora = não deduzido; sem valor = sem marcação
+        assert [bets[i]["espalhar_deduzido"] for i in ("e1", "e2", "e3", "e4")] == [False, False, None, False]
+
+
+def test_migracao_adiciona_coluna_espalhar(tmp_path, monkeypatch):
+    """Banco criado antes do campo: a coluna entra no init e os jogos antigos
+    continuam lá, com espalhar = None."""
+    import sqlite3
+
+    caminho = tmp_path / "antigo.db"
+    con = sqlite3.connect(caminho)
+    con.execute(
+        "CREATE TABLE bets (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, "
+        "loteria TEXT NOT NULL DEFAULT 'mega', concurso INTEGER NOT NULL, origem TEXT NOT NULL, "
+        "estrategia TEXT, dezenas TEXT NOT NULL, criado_em TEXT NOT NULL)"
+    )
+    con.execute(
+        "INSERT INTO bets VALUES ('velho', 'owner', 'mega', 3000, 'app', 'aleatorio', '[1,2,3,4,5,6]', '')"
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(db, "DB_PATH", str(caminho))
+    db.init_db()
+    cols = {r["name"] for r in db._query("PRAGMA table_info(bets)")}
+    assert "espalhar" in cols
+    assert db.list_bets("owner")[0]["espalhar"] is None
+    db.upsert_bet("owner", {"id": "novo", "concurso": 3001, "origem": "app", "dezenas": [1, 2, 3, 4, 5, 6], "espalhar": True})
+    assert {b["id"]: b["espalhar"] for b in db.list_bets("owner")} == {"velho": None, "novo": True}
+
+
+def test_backfill_espalhar_e_sync_nao_apaga(tmp_path, monkeypatch):
+    """O estudo preenche só jogos sem o campo, uma vez por versão; e um
+    aparelho que reenvia a cópia antiga (sem o campo) não apaga o valor."""
+    import json
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "bf.db"))
+    db.init_db()
+    base = {"concurso": 3000, "origem": "app", "estrategia": "aleatorio", "dezenas": [1, 2, 3, 4, 5, 6]}
+    db.upsert_bets(
+        "owner",
+        [dict(base, id="velho1"), dict(base, id="velho2"), dict(base, id="gravado", espalhar=False)],
+    )
+    arquivo = tmp_path / "espalhar_deduzido.json"
+    arquivo.write_text(
+        json.dumps(
+            {
+                "versao": 7,
+                "jogos": [
+                    {"id": "velho1", "espalhar": True, "deduzido": True},
+                    {"id": "gravado", "espalhar": True, "deduzido": True},  # já tinha valor: fica
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(db, "BACKFILL_ESPALHAR", arquivo)
+    db.init_db()
+
+    def estado():
+        return {b["id"]: (b["espalhar"], b["espalhar_deduzido"]) for b in db.list_bets("owner")}
+
+    assert estado() == {"velho1": (True, True), "velho2": (None, None), "gravado": (False, False)}
+    assert db.get_meta("backfill_espalhar:7") == {"jogos": 2}
+
+    # o celular reenvia a cópia antiga no sync: o valor deduzido continua
+    db.upsert_bets("owner", [dict(base, id="velho1")])
+    assert estado()["velho1"] == (True, True)
+    # um valor gravado de verdade substitui o deduzido
+    db.upsert_bets("owner", [dict(base, id="velho1", espalhar=False)])
+    assert estado()["velho1"] == (False, False)
+
+    # outra conta não sobrescreve o jogo de mesmo id
+    db.upsert_bets("intruso", [dict(base, id="gravado", concurso=1)])
+    assert [b["concurso"] for b in db.list_bets("owner") if b["id"] == "gravado"] == [3000]

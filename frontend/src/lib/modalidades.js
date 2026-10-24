@@ -64,19 +64,23 @@ const RAW = [
     sorteio: 'sorteia 6 dezenas + 2 trevos',
     preco: 6.0,
     dias: '2x por semana (qua, dom)',
+    // As 10 faixas oficiais. "1 ou nenhum" trevo é UMA faixa só (6, 5 e 4
+    // acertos); com 3 ou 2 acertos o trevo é obrigatório. As duas mais baixas
+    // são de valor fixo: 2 + 1 paga R$ 6 e 3 + 1 paga R$ 24.
+    qualquerExato: 11, // hipergeométrica exata: 1 em 11,39 (a soma das faixas arredondadas daria 12)
     faixas: [
       { label: '6 acertos + 2 trevos', umEm: 238360500, principal: true },
-      { label: '6 + 1 trevo', umEm: 29795062 },
-      { label: '6 + 0 trevo', umEm: 39726750 },
+      { label: '6 + 1 ou nenhum trevo', umEm: 17025750 },
       { label: '5 + 2 trevos', umEm: 902881 },
-      { label: '5 + 1', umEm: 112860 },
-      { label: '5 + 0', umEm: 150480 },
+      { label: '5 + 1 ou nenhum', umEm: 64491 },
       { label: '4 + 2', umEm: 16798 },
-      { label: '4 + 1', umEm: 2100 },
+      { label: '4 + 1 ou nenhum', umEm: 1200 },
       { label: '3 + 2', umEm: 900 },
+      { label: '3 + 1', umEm: 112 },
       { label: '2 + 2', umEm: 117 },
+      { label: '2 + 1', umEm: 15 },
     ],
-    nota: 'A mais difícil de todas — quase 5x a Mega-Sena — porque os 2 trevos multiplicam por 15.',
+    nota: 'O prêmio principal é o mais difícil de todos — quase 5x a Mega-Sena —, mas ganhar algo é fácil: 1 em 11, quase sempre os R$ 6 de 2 acertos + 1 trevo.',
   },
   {
     key: 'timemania',

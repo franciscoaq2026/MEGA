@@ -48,7 +48,7 @@ function Veredito({ cs }) {
   return (
     <div className={`rounded-lg border px-3 py-2.5 text-sm ${cor}`}>
       <p className="font-semibold">
-        Resultado: {cs.veredito} (p = {fmt(cs.p_valor)})
+        Resultado: {cs.veredito} ({cs.p_valor < 0.001 ? 'p < 0,001' : `p = ${fmt(cs.p_valor)}`})
       </p>
       <p className="text-xs mt-1 leading-relaxed">{cs.explicacao}</p>
     </div>
@@ -265,7 +265,7 @@ export default function Probabilidades() {
         title={
           <span className="inline-flex items-center gap-1.5">
             Existe padrão? O teste do qui-quadrado
-            <Help text="Compara quantas vezes cada dezena saiu com o que o acaso puro produziria. Sob aleatoriedade, o valor esperado da própria estatística é igual aos graus de liberdade — então um resultado perto desse número é a assinatura de um sorteio honesto." />
+            <Help text="Compara quantas vezes cada dezena saiu com o que o acaso puro produziria. Sob aleatoriedade, o valor esperado da própria estatística é igual aos graus de liberdade — então um resultado perto desse número é a assinatura de um sorteio honesto. A conta já corrige o fato de cada concurso tirar várias dezenas distintas (sem reposição)." />
           </span>
         }
         subtitle={alea ? `Calculado sobre ${fmt(alea.chi_square.draws_considered)} concursos do seu cache` : null}
@@ -314,11 +314,12 @@ export default function Probabilidades() {
               </div>
             </div>
             <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-100 pt-2">
-              A dezena que mais saiu está {fmt(alea.chi_square.maior_desvio_pct)}% acima da média —
-              e é justamente esse tipo de oscilação que o qui-quadrado acima mede e considera
-              normal. Quanto menos dezenas a loteria sorteia por concurso, maior a oscilação
-              esperada. Seja qual for o histórico, nenhuma dezena tem probabilidade diferente das
-              outras no próximo sorteio.
+              A dezena mais desviada está {fmt(alea.chi_square.maior_desvio_pct)}% longe da média —
+              é esse tipo de oscilação que o qui-quadrado acima mede.{' '}
+              {alea.chi_square.nivel === 'atipico'
+                ? 'Aqui ela passou do que o acaso costuma produzir, mas continua pequena demais para virar vantagem: compare a estratégia de frequência com a aleatória no backtest de Gerar jogos, no histórico inteiro.'
+                : 'Aqui ela está dentro do que o acaso produz.'}{' '}
+              Quanto menos dezenas a loteria sorteia por concurso, maior a oscilação esperada.
             </p>
           </div>
         )}

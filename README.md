@@ -109,7 +109,7 @@ Todas valem para as duas loterias — o app é parametrizado por
   fixo; para onde vai o dinheiro apostado; e o **teste do qui-quadrado** sobre
   o histórico, com a distribuição observada de cada indicador sobreposta à
   teórica. É a evidência, com os dados do próprio usuário, de que não há
-  padrão a explorar.
+  padrão que valha dinheiro.
 - **Fábrica**: filtros por indicador, termômetro de tipicidade e fechamentos
   (roda completa e reduzida, com a garantia verificada por força bruta antes
   de mostrar). Os indicadores são escolhidos por loteria — ver abaixo.
@@ -135,10 +135,17 @@ exatamente 9.
 
 Medido sobre os 3.657 concursos do histórico embutido:
 
-- **Qui-quadrado das frequências: 24,2 com 24 graus de liberdade** (p = 0,45).
-  Sob acaso puro o valor esperado da estatística é igual aos graus de
-  liberdade — ou seja, o resultado é praticamente o do acaso perfeito. A dezena
-  mais sorteada está só 4,6% acima da média. Não existe "dezena quente".
+- **Qui-quadrado das frequências: 58,2 com 24 graus de liberdade** (p = 0,0001).
+  É um desvio real para o acaso puro (o esperado seria ~24) — mas pequeno: a
+  dezena mais sorteada está só 4,6% acima da média, e o desvio se concentrou
+  em 2019–2023 (de 2023 em diante o teste volta a dar p ≈ 0,4). Em dinheiro,
+  vale pouco: jogar sempre nas mais sorteadas eleva o retorno das faixas
+  fixas de 25,7% para 28%–30% (estimativa otimista), e o backtest da
+  estratégia "frequência" no histórico inteiro fica dentro da margem do acaso.
+  > Até a correção deste teste, o app mostrava "24,2 (p = 0,45)": era o
+  > Pearson bruto, cuja média sob acaso é 10 (= 25 − 15), comparado com 24 graus
+  > de liberdade. Com 15 de 25 dezenas sorteadas sem reposição, a estatística
+  > precisa do fator (25 − 1)/(25 − 15) = 2,4 — ver `stats.chi_square_frequencias`.
 - **Toda distribuição observada coincide com a teórica**: pares (média 7,2),
   primos (5,4), moldura (9,6), miolo (5,4), múltiplos de 3 (4,8), repetidas
   do concurso anterior (9,0) e soma (195,2 contra 195 teóricos).
@@ -150,8 +157,18 @@ Medido sobre os 3.657 concursos do histórico embutido:
 
 O veredito do teste tem três níveis e é deliberadamente cauteloso: um teste a
 5% "reprova" 1 de cada 20 históricos honestos, então um p entre 0,01 e 0,05
-é reportado como flutuação normal, não como viés. A Mega-Sena cai justamente
-nesse caso (p = 0,03) — e a tela explica por que isso não é evidência de nada.
+é reportado como flutuação normal, não como viés. A Mega-Sena dá 88,2 com 59
+graus de liberdade (p = 0,008), mas o desvio não se repete: a correlação entre
+os desvios da 1ª e da 2ª metade da história é praticamente zero, e as
+estratégias de frequência e atraso empatam com o acaso no backtest.
+
+O **backtest** (Gerar jogos) roda nos últimos 100, nos últimos 500 ou em todo
+o histórico e mostra, junto da média de cada estratégia, a **margem de 95% do
+acaso** e o z. No histórico embutido inteiro: Mega 0,6 ± 0,025 (todas
+dentro, |z| ≤ 1,1); Lotofácil 9,0 ± 0,04, com "atrasados" em 9,054 (z = +2,6)
+— no limite, e com 4 estratégias testadas uma passar de 95% acontece por acaso
+em ~19% das vezes. Mesmo se fosse real, +0,05 acerto por jogo não muda o
+resultado de quem joga.
 
 ## Deploy (Vercel + Turso)
 

@@ -197,7 +197,14 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
 
     Sob acaso puro, o valor esperado da própria estatística é igual aos graus
     de liberdade. Um qui-quadrado próximo de `gl` é a assinatura de um sorteio
-    honesto — e é o que derruba a ideia de "dezena quente"."""
+    honesto — e é o que derruba a ideia de "dezena quente".
+
+    Correção para sorteio SEM reposição: cada concurso tira `k` dezenas
+    distintas de `M`, então a contagem de cada dezena tem variância
+    n·p·(1−p) (p = k/M), e não n·p como num sorteio de 1 bola. O Pearson
+    bruto Σ(O−E)²/E tem média M − k — e não M − 1 — e só vira χ²(M−1)
+    multiplicado por (M−1)/(M−k). Sem o fator, a Lotofácil (k = 15 de 25)
+    teria a estatística dividida por 2,4 e o teste nunca acusaria nada."""
     cfg = lotteries.get_loteria(loteria)
     pool = lotteries.numbers(cfg)
     n = len(draws)
@@ -208,7 +215,8 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
     for d in draws:
         counts.update(d["dezenas"])
     esperado = n * cfg["sorteadas"] / cfg["total"]
-    chi2 = sum((counts.get(x, 0) - esperado) ** 2 / esperado for x in pool)
+    pearson = sum((counts.get(x, 0) - esperado) ** 2 / esperado for x in pool)
+    chi2 = pearson * (cfg["total"] - 1) / (cfg["total"] - cfg["sorteadas"])
     gl = cfg["total"] - 1
     critico = _chi2_critico(gl)
     p = _gamma_q(gl / 2, chi2 / 2)
@@ -223,6 +231,7 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         for x in pool
     ]
     ordenado = sorted(freq, key=lambda f: -f["count"])
+    maior_desvio = 100 * max(abs(f["desvio"]) for f in freq) / esperado
 
     # Veredito com três níveis. Um teste a 5% "reprova" 1 de cada 20 históricos
     # perfeitamente honestos — por isso um p entre 0,01 e 0,05 não é evidência
@@ -251,10 +260,15 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         nivel, veredito = "atipico", "desvio grande para o acaso puro"
         explica = (
             f"Um desvio deste tamanho aparece em menos de {num(max(100 * p, 0.01), 2)}% "
-            "dos históricos aleatórios. Mesmo assim não é prova de viés: com "
-            "sorteios físicos, pequenas diferenças entre as bolas e o próprio "
-            "número de testes feitos explicam desvios assim. E, sobretudo, isso "
-            "não torna nenhuma dezena mais provável no PRÓXIMO sorteio."
+            "dos históricos aleatórios — pode haver algo além do acaso, como "
+            "pequenas diferenças físicas entre bolas e equipamentos ao longo "
+            "dos anos, ou este é um dos raros históricos extremos. Mesmo se for "
+            "real, o efeito é pequeno: a dezena mais desviada está "
+            f"{num(maior_desvio)}% longe da média, e um viés antigo pode nem "
+            "existir mais (bolas e globos são trocados). Para quem joga, vale "
+            "no máximo frações de acerto — o backtest de Gerar jogos, no "
+            "histórico inteiro, mostra se a estratégia de frequência tira "
+            "algum proveito."
         )
 
     return {
@@ -269,9 +283,7 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         "nivel": nivel,
         "veredito": veredito,
         "explicacao": explica,
-        "maior_desvio_pct": round(
-            100 * max(abs(f["desvio"]) for f in freq) / esperado, 1
-        ),
+        "maior_desvio_pct": round(maior_desvio, 1),
         "freq": freq,
         "mais_frequentes": ordenado[:5],
         "menos_frequentes": list(reversed(ordenado[-5:])),

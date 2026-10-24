@@ -68,3 +68,44 @@ def test_xray_uses_only_prior_history():
         stats.xray(DRAWS, 99)
     with pytest.raises(ValueError):
         stats.xray(DRAWS, 1)
+
+
+@pytest.mark.parametrize("loteria,total,k", [("lofa", 25, 15), ("mega", 60, 6)])
+def test_chi2_calibrado_para_sorteio_sem_reposicao(loteria, total, k):
+    """Sob acaso puro a estatística tem média = graus de liberdade.
+
+    O Pearson bruto tem média total − k (10 na Lotofácil, não 24): sem o fator
+    (total−1)/(total−k) o teste da Lotofácil devolvia p ≈ 0,45 para um
+    histórico com desvio real (p ≈ 0,0001)."""
+    import random
+
+    rng = random.Random(42)
+    valores = []
+    for _ in range(150):
+        draws = [{"dezenas": rng.sample(range(1, total + 1), k)} for _ in range(400)]
+        valores.append(stats.chi_square_frequencias(draws, loteria)["chi2"])
+    media = sum(valores) / len(valores)
+    gl = total - 1
+    # dp da média de 150 χ²(gl) ≈ sqrt(2·gl/150): 0,57 (gl 24) e 0,89 (gl 59)
+    assert abs(media - gl) < 4 * (2 * gl / 150) ** 0.5
+
+
+def test_chi2_lotofacil_aplica_o_fator_sem_reposicao():
+    """Contagens conhecidas: 100 concursos, esperado 60 por dezena, 6 dezenas
+    com +6 e 6 com −6. Pearson bruto = 12 × 36/60 = 7,2; a estatística
+    devolvida é 7,2 × (25−1)/(25−15) = 17,28."""
+    from collections import Counter
+
+    alvo = {**{x: 66 for x in range(1, 7)}, **{x: 54 for x in range(7, 13)},
+            **{x: 60 for x in range(13, 26)}}
+    # monta 100 sorteios de 15 dezenas com exatamente essas contagens
+    restantes = Counter(alvo)
+    draws = []
+    for _ in range(100):
+        escolha = [x for x, _ in sorted(restantes.items(), key=lambda t: (-t[1], t[0]))[:15]]
+        for x in escolha:
+            restantes[x] -= 1
+        draws.append({"dezenas": sorted(escolha)})
+    r = stats.chi_square_frequencias(draws, "lofa")
+    assert {x: c for x, c in Counter(n for d in draws for n in d["dezenas"]).items()} == alvo
+    assert r["chi2"] == pytest.approx(7.2 * 24 / 10, abs=0.01)

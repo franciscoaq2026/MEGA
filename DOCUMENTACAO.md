@@ -325,7 +325,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
 | `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
 | `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
-| `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias |
+| `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias (`ultimos=0` = histórico inteiro), com margem de 95% do acaso e z |
 
 ---
 
@@ -373,10 +373,18 @@ vazamento de futuro), com RNG semeado pelo número do concurso
 (reprodutível), e conta acertos. Esperado pelo acaso:
 `escolher · sorteadas / total` — **0,6 acertos/jogo** na Mega (6·6/60) e
 **9,0** na Lotofácil (15·15/25). O resultado empírico de todas as estratégias
-flutua em torno disso, demonstrando a ausência de poder preditivo. Medido nos
-últimos 1.000 concursos da Lotofácil: aleatório 9,07 · frequência 9,03 ·
-atrasados 9,01 · balanceado 9,04, com 10,4% a 11,3% dos jogos chegando aos 11
-acertos da faixa mínima (o teórico é 10,6%).
+flutua em torno disso, demonstrando a ausência de poder preditivo.
+
+`ultimos=0` simula o histórico inteiro. Frequência e atraso são mantidos
+incrementalmente (o jogo de cada concurso é idêntico ao de recontar o passado —
+há teste), então o histórico todo da Lotofácil roda em ~0,6 s. A resposta traz
+`margem_95` (1,96 × desvio-padrão hipergeométrico da média em n concursos) e o
+`z` de cada estratégia: em 100 concursos da Mega a margem é ±0,14 em torno de
+0,6 — sem ela, qualquer oscilação parecia "estratégia boa". No histórico
+embutido inteiro: Mega 0,6 ± 0,025, todas com |z| ≤ 1,1; Lotofácil 9,0 ± 0,04,
+aleatório 8,990 · frequência 9,008 · atrasados 9,054 (z = +2,6) · balanceado
+9,027. Com 4 estratégias, uma sair da faixa de 95% acontece por acaso em ~19%
+dos backtests; e +0,05 acerto por jogo não muda o resultado financeiro.
 
 ### 6.5.1 Régua de acertos (`distribuicao_acertos`, `avaliar_acertos`)
 A mesma hipergeométrica de §6.4 lida ao contrário: em vez de "qual a chance da

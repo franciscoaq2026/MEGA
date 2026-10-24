@@ -146,6 +146,8 @@ export default function GerarJogos() {
   const [backtest, setBacktest] = useState(null)
   const [backtestBusy, setBacktestBusy] = useState(false)
   const [backtestError, setBacktestError] = useState(null)
+  // Quantos concursos simular: 100, 500 ou 0 (= o histórico inteiro).
+  const [janelaBacktest, setJanelaBacktest] = useState(100)
   // O backend manda o esperado calculado; o valor local é só o fallback.
   const baseAcaso = backtest?.esperado_por_jogo ?? esperadoAcaso
 
@@ -264,11 +266,12 @@ export default function GerarJogos() {
     setSalvos(novos)
   }
 
-  async function rodarBacktest() {
+  async function rodarBacktest(ultimos) {
+    setJanelaBacktest(ultimos)
     setBacktestBusy(true)
     setBacktestError(null)
     try {
-      setBacktest(await apiPost('/backtest?ultimos=100'))
+      setBacktest(await apiPost(`/backtest?ultimos=${ultimos}`))
     } catch (e) {
       setBacktestError(e.message)
     } finally {
@@ -742,21 +745,32 @@ export default function GerarJogos() {
           <span className="inline-flex items-center gap-1.5">
             As estratégias funcionam? Backtest honesto
             <Help
-              text={`Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de ${num(esperadoAcaso, 1)} acerto/jogo (o que o acaso entrega nesta loteria: ${cfg.escolher} × ${cfg.sorteadas} ÷ ${cfg.total}). Rode e veja: todas empatam com o puro acaso.`}
+              text={`Teste imparcial: joga cada estratégia contra sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de ${num(esperadoAcaso, 1)} acerto/jogo (o que o acaso entrega nesta loteria: ${cfg.escolher} × ${cfg.sorteadas} ÷ ${cfg.total}) e FORA da margem do acaso — a oscilação que uma estratégia sem poder nenhum tem naquele número de concursos. Quanto mais concursos, menor a margem: use o histórico inteiro para o teste mais duro.`}
             />
           </span>
         }
-        subtitle={`Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (${num(esperadoAcaso, 1)} acerto por jogo)`}
+        subtitle={`Simula jogar cada estratégia nos concursos passados, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (${num(esperadoAcaso, 1)} acerto por jogo) e a margem dele`}
       >
-        {!backtest && (
-          <button
-            onClick={rodarBacktest}
-            disabled={backtestBusy}
-            className="px-4 py-2 rounded-lg border border-zinc-300 bg-white text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
-          >
-            {backtestBusy ? 'Simulando…' : 'Rodar backtest (últimos 100 concursos)'}
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2 mb-3">
+          {[
+            [100, 'Últimos 100'],
+            [500, 'Últimos 500'],
+            [0, 'Histórico inteiro'],
+          ].map(([ultimos, rotulo]) => (
+            <button
+              key={ultimos}
+              onClick={() => rodarBacktest(ultimos)}
+              disabled={backtestBusy}
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium disabled:opacity-50 ${
+                backtest && janelaBacktest === ultimos
+                  ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                  : 'border-zinc-300 bg-white hover:bg-zinc-50'
+              }`}
+            >
+              {backtestBusy && janelaBacktest === ultimos ? 'Simulando…' : rotulo}
+            </button>
+          ))}
+        </div>
         {backtestError && <p className="text-sm text-red-600 mt-2">{backtestError}</p>}
         {backtest && (
           <div className="space-y-3">
@@ -766,7 +780,8 @@ export default function GerarJogos() {
                   <th className="py-1.5 font-medium">Estratégia</th>
                   <th className="py-1.5 font-medium text-right">Média de acertos/jogo</th>
                   <th className="py-1.5 font-medium text-right">
-                    vs. acaso ({num(baseAcaso, 1)})
+                    vs. acaso ({num(baseAcaso, 1)}
+                    {backtest.margem_95 != null && ` ± ${num(backtest.margem_95, 3)}`})
                   </th>
                   <th className="py-1.5 font-medium text-right">Concursos com prêmio</th>
                 </tr>
@@ -785,9 +800,15 @@ export default function GerarJogos() {
                       <td className="py-1.5 text-right font-semibold tabular-nums">
                         {num(r.media_acertos)}
                       </td>
-                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
+                      <td
+                        className={`py-1.5 text-right tabular-nums ${
+                          Math.abs(r.z ?? 0) > 1.96 ? 'text-amber-700 font-medium' : 'text-zinc-500'
+                        }`}
+                        title={r.z != null ? `z = ${num(r.z)}` : undefined}
+                      >
                         {(r.media_acertos - baseAcaso >= 0 ? '+' : '') +
-                          num(r.media_acertos - baseAcaso)}
+                          num(r.media_acertos - baseAcaso, 3)}
+                        {r.z != null && (Math.abs(r.z) > 1.96 ? ' · fora' : ' · dentro')}
                       </td>
                       <td className="py-1.5 text-right tabular-nums text-zinc-500">
                         {premiados}/{backtest.concursos_simulados}
@@ -797,12 +818,16 @@ export default function GerarJogos() {
                 })}
               </tbody>
             </table>
-            <p className="text-xs text-zinc-500">
-              Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} · todas as
-              estratégias flutuam em torno de {num(baseAcaso, 1)} — nenhuma “sabe” algo sobre o
-              próximo sorteio. Se alguma parecesse muito acima, seria sorte da amostra, não
-              previsão. A coluna da direita conta os concursos em que o jogo daquela estratégia
-              chegou a {faixaMinima} acertos ou mais (a faixa mínima premiada): também empatam.
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} (
+              {backtest.concursos_simulados}). “Dentro” = a diferença cabe na margem de 95% que uma
+              estratégia sem poder nenhum oscila nesse número de concursos
+              {backtest.margem_95 != null && ` (±${num(backtest.margem_95, 3)})`}. Com 4
+              estratégias, uma ficar “fora” por puro acaso acontece em cerca de 1 a cada 5
+              backtests — e, mesmo quando fosse real, uns centésimos de acerto por jogo não mudam
+              o resultado de quem joga. A coluna da direita conta os concursos em que o jogo
+              daquela estratégia chegou a {faixaMinima} acertos ou mais (a faixa mínima
+              premiada).
             </p>
           </div>
         )}

@@ -67,3 +67,36 @@ def test_backtest_semente_nao_depende_do_hash_do_processo():
     assert checker._semente(1000, "aleatorio") != checker._semente(1000, "balanceado")
     # valor fixo: se a fórmula mudar, o backtest publicado muda junto
     assert checker._semente(2500, "aleatorio") == 2500 * 1000 + zlib.crc32(b"aleatorio") % 1000
+
+
+def test_backtest_historico_inteiro_e_regua_do_acaso():
+    """ultimos=0 simula tudo a partir do mínimo de histórico, e o resultado traz
+    a margem de 95% do acaso e o z de cada estratégia para poder ser lido."""
+    r = checker.backtest(DRAWS, ultimos=0)
+    assert r["concursos_simulados"] == len(DRAWS) - 50
+    # Mega simples: dp de 1 jogo = sqrt(6·6·54·54 / (60²·59)) ≈ 0,7027
+    dp_media = (6 * 6 * 54 * 54 / (60 * 60 * 59)) ** 0.5 / (len(DRAWS) - 50) ** 0.5
+    assert abs(r["margem_95"] - 1.96 * dp_media) < 0.001
+    for res in r["estrategias"].values():
+        z = (res["media_acertos"] - r["esperado_por_jogo"]) / dp_media
+        assert abs(res["z"] - z) < 0.02
+
+
+def test_backtest_incremental_igual_a_recontar_o_passado():
+    """O backtest mantém frequência/atraso incrementalmente; o jogo de cada
+    concurso tem de ser o mesmo que as estratégias geram recontando o passado."""
+    import random as _random
+
+    from app import generator, lotteries
+
+    pool = lotteries.numbers(lotteries.get_loteria("mega"))
+    r = checker.backtest(DRAWS, ultimos=30)
+    esperado = {nome: 0 for nome in generator.GERADORES}
+    for i in range(len(DRAWS) - 30, len(DRAWS)):
+        alvo = DRAWS[i]
+        for nome, fn in generator.GERADORES.items():
+            rng = _random.Random(checker._semente(alvo["concurso"], nome))
+            jogo = fn(rng, DRAWS[:i], 6, pool)
+            esperado[nome] += len(set(jogo) & set(alvo["dezenas"]))
+    for nome, total in esperado.items():
+        assert r["estrategias"][nome]["media_acertos"] == round(total / 30, 3)

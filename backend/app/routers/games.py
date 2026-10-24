@@ -338,11 +338,12 @@ def check(req: CheckRequest, loteria: str | None = Query(default=None)):
 
 @router.post("/backtest")
 def backtest(
-    ultimos: int = Query(100, ge=10, le=500),
+    ultimos: int = Query(100, ge=0, le=10000),
     loteria: str | None = Query(default=None),
 ):
     """Teste honesto: joga cada estratégia nos últimos N concursos usando só
-    o histórico anterior de cada um — mostra que nenhuma supera o acaso."""
+    o histórico anterior de cada um — mostra que nenhuma supera o acaso.
+    `ultimos=0` simula o histórico inteiro."""
     lot = _lot(loteria)
     _somente_avancada(lot)
     draws = db.get_all_draws_asc(lot)

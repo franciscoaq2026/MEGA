@@ -15,19 +15,19 @@ const ESTRATEGIAS = [
     id: 'aleatorio',
     nome: 'Aleatório puro',
     desc: 'Sem viés nenhum — exatamente como a loteria funciona (baseline).',
-    help: 'Sorteia os números totalmente ao acaso, igual ao sorteio de verdade. É a opção mais honesta: nenhuma outra estratégia tem chance de acerto maior do que esta.',
+    help: 'Sorteia os números totalmente ao acaso, igual ao sorteio de verdade. Num sorteio perfeito, nenhuma outra estratégia tem chance maior do que esta; no histórico real, a melhor ganhou dela por centésimos de acerto por jogo (veja “Qual estratégia usar?”).',
   },
   {
     id: 'frequencia',
     nome: 'Frequência histórica',
     desc: 'Números mais sorteados no passado recebem mais peso.',
-    help: 'Dá preferência aos números que mais saíram no histórico (os “quentes”). Parece esperto, mas NÃO aumenta a chance — a bolinha não lembra do passado. Serve para quem gosta de apostar nos mais frequentes.',
+    help: 'Dá preferência aos números que mais saíram no histórico (os “quentes”). Num sorteio perfeito isso não muda nada — a bolinha não lembra do passado. Mas o sorteio é físico, e pequenas diferenças entre as bolas podem fazer algumas dezenas saírem um pouco mais: o botão “Qual estratégia usar?” testa isso com o histórico. Mesmo quando se confirma, a vantagem é de centésimos de acerto por jogo.',
   },
   {
     id: 'atrasados',
     nome: 'Atrasados',
     desc: 'Prioriza números que não saem há mais concursos.',
-    help: 'Dá preferência aos números que estão há mais tempo sem sair (a ideia de “já vai sair”). É a ilusão oposta à da frequência; também não muda a chance real.',
+    help: 'Dá preferência aos números que estão há mais tempo sem sair (a ideia de “já vai sair”). Uma dezena não “deve” sair por estar atrasada: o sorteio não tem memória. O botão “Qual estratégia usar?” mostra o teste com o histórico.',
   },
   {
     id: 'balanceado',
@@ -492,8 +492,147 @@ function TesteNoPassado({ cfg }) {
   )
 }
 
+// Resposta do teste concurso a concurso, em português simples.
+const NIVEL_SINAL = {
+  claro: 'sim, com clareza',
+  fraco: 'sim, mas fraco',
+  nenhum: 'não',
+  contrario: 'não — saíram até menos',
+}
+
+// O botão "Qual estratégia usar?". A estratégia vem do histórico do banco e é
+// recalculada a cada concurso novo; Espalhar, custo e chance são contas fixas.
+function Recomendacao({ cfg, qtdJogos, emUso, onUsar }) {
+  const [rec, setRec] = useState(null)
+  const [erro, setErro] = useState(null)
+  const pedido = useRef(0)
+
+  useEffect(() => {
+    const meu = ++pedido.current
+    setErro(null)
+    apiGet(`/recomendacao?jogos=${qtdJogos}`)
+      .then((r) => meu === pedido.current && setRec(r))
+      .catch((e) => meu === pedido.current && setErro(e.message))
+  }, [qtdJogos])
+
+  if (erro) return <p className="text-sm text-red-600">{erro}</p>
+  if (!rec || rec.jogos !== qtdJogos) return <p className="text-sm text-zinc-500">Calculando…</p>
+
+  const k = cfg.escolher
+  const pct = (x) => `${num(100 * x, 1)}%`
+  const menorPremio = cfg.premios
+    .find((p) => p.ac === rec.menor_premio)
+    ?.label.split(' · ')[0]
+    .toLowerCase()
+  const sinalEscolhido = rec.sinais[rec.estrategia]
+  const quais = { frequencia: 'mais sorteadas', atrasados: 'mais atrasadas' }
+  const linhas = [
+    {
+      rotulo: 'Estratégia',
+      valor: nomeEstrategia(rec.estrategia),
+      porque: sinalEscolhido
+        ? `As dezenas ${quais[rec.estrategia]} até cada concurso saíram um pouco mais no concurso ` +
+          `seguinte (${NIVEL_SINAL[sinalEscolhido.nivel]}). Na prática é pouco: um jogo com as ${k} ` +
+          `${quais[rec.estrategia]} fez ${num(sinalEscolhido.acertos_jogo, 3)} acertos em média, ` +
+          `contra ${num(sinalEscolhido.esperado, 3)} do acaso.`
+        : 'Nenhum padrão do passado se repetiu de forma confiável: as estratégias empatam, e a ' +
+          'Aleatório é a mais simples.',
+    },
+    {
+      rotulo: 'Espalhar os jogos',
+      valor: qtdJogos === 1 ? 'Não se aplica' : rec.espalhar.faz_diferenca ? 'Ligado' : 'Ligado (tanto faz)',
+      porque:
+        qtdJogos === 1
+          ? 'Com 1 jogo não há o que espalhar.'
+          : rec.espalhar.faz_diferenca
+            ? `Com ${jogosTexto(qtdJogos)} espalhados você ganha algo em ${pct(rec.espalhar.com)} dos ` +
+              `concursos; sem espalhar, em ${pct(rec.espalhar.sem)}.`
+            : `Na ${cfg.nome}, ${jogosTexto(qtdJogos)} quase não repetem dezenas entre si: a chance é ` +
+              'a mesma dos dois jeitos.',
+    },
+    {
+      rotulo: 'Anti-rateio',
+      valor: 'Tanto faz',
+      porque:
+        'Não muda a chance: toda combinação tem a mesma probabilidade de sair. Ele só evita jogos ' +
+        'que muita gente faz.',
+    },
+    {
+      rotulo: `Custo dos ${jogosTexto(qtdJogos)}`,
+      valor: formatMoney(rec.custo),
+      porque: `${qtdJogos} × ${formatMoney(rec.preco)}`,
+    },
+    {
+      rotulo: 'Chance de ganhar algo',
+      valor:
+        rec.chance.prob >= 0.05
+          ? `${num(rec.chance.pct, 1)}%`
+          : `1 em ${fmt(Math.round(rec.chance.one_in))} concursos`,
+      porque:
+        `Prêmio de ${menorPremio} ou mais, com ${jogosTexto(qtdJogos)}` +
+        `${qtdJogos > 1 ? ' espalhados' : ''}. Conta exata: não depende do histórico.`,
+    },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <dl className="divide-y divide-zinc-100">
+        {linhas.map((l) => (
+          <div key={l.rotulo} className="py-2 sm:grid sm:grid-cols-[11rem_12rem_1fr] sm:gap-3">
+            <dt className="text-xs text-zinc-500 sm:text-sm sm:text-zinc-600">{l.rotulo}</dt>
+            <dd className="text-sm font-semibold">{l.valor}</dd>
+            <dd className="text-xs text-zinc-500 leading-relaxed mt-0.5 sm:mt-0">{l.porque}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 leading-relaxed">
+        <p className="font-medium text-zinc-800">Como o app escolheu a estratégia</p>
+        <p className="mt-1">
+          Teste com {fmt(rec.concursos_testados)} concursos, até o concurso {rec.ultimo_concurso}{' '}
+          ({formatDate(rec.ultima_data)}), um por um, usando só o que tinha saído antes de cada
+          sorteio:
+        </p>
+        <ul className="mt-1 space-y-0.5">
+          {Object.entries(quais).map(([id, nome]) => {
+            const s = rec.sinais[id]
+            return (
+              <li key={id}>
+                • As {nome} saíram mais no concurso seguinte? <strong>{NIVEL_SINAL[s.nivel]}</strong>{' '}
+                — jogo com as {k} {nome}: {num(s.acertos_jogo, 3)} acertos (acaso{' '}
+                {num(s.esperado, 3)}).
+              </li>
+            )
+          })}
+        </ul>
+        <p className="mt-1">
+          Regra: o app recomenda a estratégia cujo padrão se confirmou no teste e que também deu
+          mais acertos que o acaso no jogo montado com ele. Se nenhuma passar, Aleatório puro. A
+          conta é refeita a cada concurso novo; custo, chance e Espalhar não dependem do histórico.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => onUsar(rec.estrategia)}
+          disabled={emUso(rec.estrategia)}
+          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+        >
+          Usar esta recomendação
+        </button>
+        {emUso(rec.estrategia) && (
+          <span className="text-xs text-emerald-700 font-medium">
+            ✓ Em uso no gerador abaixo: é só clicar em Gerar.
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
+  const [mostrarRecomendacao, setMostrarRecomendacao] = useState(false)
   const dezenasFixas = cfg.escolher === cfg.maxEscolher
   // Formato da aposta. 'simples' = N bilhetes de escolher dezenas, comprados
   // separados. 'multipla' = UM bilhete com mais dezenas (o fechamento).
@@ -655,14 +794,48 @@ export default function GerarJogos() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold">Gerar jogos</h2>
-        <p className="text-xs text-zinc-500">
-          Escolha o formato da aposta, diga quantos jogos e gere. As probabilidades ao lado
-          acompanham a sua escolha. Para peneirar por soma, pares, primos etc., use a aba{' '}
-          <strong>Fábrica</strong>.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex-1 min-w-[16rem]">
+          <h2 className="text-lg font-bold">Gerar jogos</h2>
+          <p className="text-xs text-zinc-500">
+            Escolha o formato da aposta, diga quantos jogos e gere. As probabilidades ao lado
+            acompanham a sua escolha. Para peneirar por soma, pares, primos etc., use a aba{' '}
+            <strong>Fábrica</strong>.
+          </p>
+        </div>
+        {cfg.avancada && (
+          <button
+            type="button"
+            aria-expanded={mostrarRecomendacao}
+            onClick={() => setMostrarRecomendacao((v) => !v)}
+            className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold hover:bg-emerald-50"
+          >
+            {mostrarRecomendacao ? 'Fechar recomendação' : 'Qual estratégia usar?'}
+          </button>
+        )}
       </div>
+
+      {cfg.avancada && mostrarRecomendacao && (
+        <Card
+          title={`Recomendação para ${jogosTexto(qtdJogos)} na ${cfg.nome}`}
+          subtitle={
+            simples
+              ? 'Para a quantidade de jogos do gerador abaixo — mude lá e a recomendação acompanha.'
+              : 'Para jogos simples separados. “Usar esta recomendação” troca o formato para simples.'
+          }
+        >
+          <Recomendacao
+            cfg={cfg}
+            qtdJogos={qtdJogos}
+            emUso={(e) => simples && estrategia === e && (qtdJogos === 1 || espalhar)}
+            onUsar={(e) => {
+              setFormato('simples')
+              setEstrategia(e)
+              setEspalhar(true)
+            }}
+          />
+        </Card>
+      )}
 
       {/* Formato: a decisão que mais muda o resultado prático */}
       {!dezenasFixas && (

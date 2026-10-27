@@ -20,7 +20,7 @@ from functools import lru_cache, partial
 from itertools import accumulate, combinations
 from math import comb, sqrt
 
-from . import analysis, lotteries
+from . import analysis, lotteries, stats
 
 ESTRATEGIAS = {
     "aleatorio": "Aleatório puro — sem viés nenhum (baseline)",
@@ -665,6 +665,49 @@ def odds_carteira(
             "one_in": round(1 / solto, 2) if solto else None,
             "pct": round(100 * solto, 2),
         },
+    }
+
+
+def recomendacao(
+    draws: list[dict], jogos: int, loteria: str = "mega", teste: dict | None = None
+) -> dict:
+    """O botão "Qual estratégia usar?": estratégia, Espalhar, custo e chance de
+    ganhar algo para `jogos` apostas simples.
+
+    Só a estratégia depende do histórico. Uma estratégia com sinal (Frequência
+    ou Atrasados) é recomendada quando o sinal dela se confirmou concurso a
+    concurso (z ≥ 1,96, ver stats.sinais_concurso_a_concurso) E o jogo montado
+    com ele acertou mais que o acaso; passando as duas, a de sinal mais forte.
+    Se nenhuma passa, Aleatório puro: as estratégias empatam e ela é a mais
+    simples. Balanceado não tem sinal por dezena para testar. Como o teste roda
+    sobre o histórico do banco, a recomendação acompanha cada concurso novo.
+
+    Espalhar, custo e chance são contas fixas (as mesmas de `odds_carteira`).
+    `teste` é o resultado do teste já calculado para este histórico, se houver."""
+    cfg = lotteries.get_loteria(loteria)
+    teste = teste or stats.sinais_concurso_a_concurso(draws, cfg["code"])
+    candidatas = [
+        (s["z"], nome)
+        for nome, s in teste["sinais"].items()
+        if s["z"] >= stats.Z_SINAL and s["acertos_jogo"] > s["esperado"]
+    ]
+    carteira = odds_carteira(jogos, cfg["code"], espalhar=True)
+    com, sem = carteira["qualquer"]["prob"], carteira["qualquer_solto"]["prob"]
+    return {
+        "loteria": cfg["code"],
+        "jogos": jogos,
+        "estrategia": max(candidatas)[1] if candidatas else "aleatorio",
+        **teste,
+        "espalhar": {
+            "com": com,
+            "sem": sem,
+            # meio ponto percentual: abaixo disso, na prática tanto faz
+            "faz_diferenca": jogos > 1 and com - sem >= 0.005,
+        },
+        "chance": carteira["qualquer"],
+        "custo": round(jogos * cfg["preco"], 2),
+        "preco": cfg["preco"],
+        "menor_premio": min(cfg["faixas"]),
     }
 
 

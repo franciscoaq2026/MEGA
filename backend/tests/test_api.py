@@ -290,3 +290,28 @@ def test_backtest_varios_jogos_e_janelas():
         assert menor == json.loads(json.dumps(direto))
 
         assert c.post("/api/backtest?loteria=lofa&ultimos=50&jogos=6").status_code == 422
+
+
+def test_recomendacao_endpoint():
+    import random
+
+    db.init_db()
+    db.upsert_draws(
+        [
+            {"concurso": 500 + i, "data": "2024-02-01",
+             "dezenas": sorted(random.Random(500 + i).sample(range(1, 26), 15))}
+            for i in range(200)
+        ],
+        "lofa",
+    )
+    with make_client() as c:
+        r = c.get("/api/recomendacao?loteria=lofa&jogos=3")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["estrategia"] in ("aleatorio", "frequencia", "atrasados")
+        assert set(body["sinais"]) == {"frequencia", "atrasados"}
+        assert body["custo"] == 10.5 and body["jogos"] == 3
+        assert body["concursos_testados"] == db.count_draws("lofa") - 100
+        # a segunda consulta sai do teste guardado e dá o mesmo
+        assert c.get("/api/recomendacao?loteria=lofa&jogos=3").json() == body
+        assert c.get("/api/recomendacao?loteria=lofa&jogos=0").status_code == 422

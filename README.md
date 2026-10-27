@@ -12,12 +12,15 @@ Duas modalidades, escolhidas pelos extremos opostos que ocupam:
 | **Mega-Sena** | 6 de 60 | 1 em 50.063.860 | 1 em 2.298 | R$ 6,00 |
 | **Lotofácil** | 15 de 25 | 1 em 3.268.760 | **1 em 9** | R$ 3,50 |
 
-> **Aviso importante (e visível no app):** cada sorteio é independente e
-> estatisticamente aleatório — **nenhuma estratégia aumenta a chance real de
-> acerto**. A única coisa que muda a probabilidade é jogar mais dezenas ou mais
-> bilhetes, pagando proporcionalmente por isso. As estatísticas aqui são
-> exploração de dados e entretenimento, não previsão. O app inclui inclusive um
-> *backtest* que demonstra isso com os próprios dados.
+> **Aviso importante (e visível no app):** cada sorteio é independente —
+> **nenhuma estratégia aumenta a chance de acerto de um jeito que faça
+> diferença no bolso**: no histórico real, a melhor ganhou do acaso por
+> centésimos de acerto por jogo (pequenas diferenças físicas entre as bolas
+> bastam para isso). A única coisa que muda a probabilidade de verdade é jogar
+> mais dezenas ou mais bilhetes, pagando proporcionalmente por isso. As
+> estatísticas aqui são exploração de dados e entretenimento, não previsão. O
+> app inclui um *backtest* e um teste concurso a concurso que medem isso com os
+> próprios dados.
 
 ## Stack
 
@@ -104,7 +107,10 @@ Todas valem para as duas loterias — o app é parametrizado por
   chance, mas evita dividir prêmio); painel de **probabilidades reais** por
   faixa, com o custo equivalente; **backtest** das estratégias contra os
   últimos 50, 100 ou 200 concursos, com 1 a 5 jogos por concurso e a faixa
-  do que a sorte, sozinha, produz.
+  do que a sorte, sozinha, produz; botão **"Qual estratégia usar?"**, que
+  testa concurso a concurso se as dezenas mais sorteadas (ou as atrasadas)
+  continuaram saindo mais e recomenda estratégia, Espalhar, custo e chance —
+  refeito a cada concurso novo.
 - **Probabilidades**: a chance exata de cada faixa para todos os tamanhos de
   aposta que a Caixa aceita, com custo; quanto volta pelas faixas de prêmio
   fixo; para onde vai o dinheiro apostado; e o **teste do qui-quadrado** sobre

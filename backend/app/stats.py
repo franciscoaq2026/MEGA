@@ -9,7 +9,7 @@ São ferramentas de exploração de dados.
 
 from collections import Counter
 from itertools import combinations
-from math import comb
+from math import comb, sqrt
 from statistics import pstdev
 
 from . import lotteries
@@ -197,7 +197,14 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
 
     Sob acaso puro, o valor esperado da própria estatística é igual aos graus
     de liberdade. Um qui-quadrado próximo de `gl` é a assinatura de um sorteio
-    honesto — e é o que derruba a ideia de "dezena quente"."""
+    honesto.
+
+    Cada concurso tira `sorteadas` dezenas SEM repetir. Então a contagem de
+    uma dezena varia n·p·(1−p), e não n·p como no qui-quadrado de Pearson, que
+    supõe cada bola devolvida ao globo. Como as contagens somam sempre
+    n·sorteadas, a soma ainda é multiplicada por (total−1)/total. Sem essa
+    correção, a estatística média de um histórico 100% aleatório da Lotofácil
+    era 10, e não 24: o teste praticamente nunca acusava desvio."""
     cfg = lotteries.get_loteria(loteria)
     pool = lotteries.numbers(cfg)
     n = len(draws)
@@ -207,8 +214,17 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
     counts = Counter()
     for d in draws:
         counts.update(d["dezenas"])
-    esperado = n * cfg["sorteadas"] / cfg["total"]
-    chi2 = sum((counts.get(x, 0) - esperado) ** 2 / esperado for x in pool)
+    p_dezena = cfg["sorteadas"] / cfg["total"]
+    esperado = n * p_dezena
+    variancia = n * p_dezena * (1 - p_dezena)
+    if variancia <= 0:
+        raise ValueError("a loteria sorteia todas as dezenas: não há o que testar")
+    chi2 = (
+        sum((counts.get(x, 0) - esperado) ** 2 for x in pool)
+        / variancia
+        * (cfg["total"] - 1)
+        / cfg["total"]
+    )
     gl = cfg["total"] - 1
     critico = _chi2_critico(gl)
     p = _gamma_q(gl / 2, chi2 / 2)
@@ -251,10 +267,11 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         nivel, veredito = "atipico", "desvio grande para o acaso puro"
         explica = (
             f"Um desvio deste tamanho aparece em menos de {num(max(100 * p, 0.01), 2)}% "
-            "dos históricos aleatórios. Mesmo assim não é prova de viés: com "
-            "sorteios físicos, pequenas diferenças entre as bolas e o próprio "
-            "número de testes feitos explicam desvios assim. E, sobretudo, isso "
-            "não torna nenhuma dezena mais provável no PRÓXIMO sorteio."
+            "dos históricos aleatórios. Em sorteio físico, isso costuma vir de "
+            "pequenas diferenças entre as bolas ou o equipamento. O efeito no "
+            "acerto é pequeno: o botão “Qual estratégia usar?”, em Gerar jogos, "
+            "testa se as dezenas mais sorteadas continuaram saindo mais, concurso "
+            "a concurso, e quanto isso vale em acertos."
         )
 
     return {
@@ -275,6 +292,98 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         "freq": freq,
         "mais_frequentes": ordenado[:5],
         "menos_frequentes": list(reversed(ordenado[-5:])),
+    }
+
+
+# z a partir do qual um sinal conta como confirmado: 2,5% numa ponta (o mesmo
+# corte do intervalo de 95%).
+Z_SINAL = 1.96
+
+
+def _nivel_sinal(z: float) -> str:
+    if z >= 3:
+        return "claro"
+    if z >= Z_SINAL:
+        return "fraco"
+    if z <= -Z_SINAL:
+        return "contrario"
+    return "nenhum"
+
+
+def sinais_concurso_a_concurso(
+    draws: list[dict], loteria: str = "mega", inicio: int = 100
+) -> dict:
+    """Testa, concurso a concurso e sem olhar o futuro, se o sinal de cada
+    estratégia acertou o sorteio seguinte:
+
+    - frequencia: quantas vezes cada dezena saiu até ali (o peso da Frequência);
+    - atrasados: há quantos concursos cada dezena não sai (o peso dos Atrasados).
+
+    Em cada concurso, soma o sinal (menos a média) das dezenas que saíram. Num
+    sorteio honesto essa soma tem média zero e variância conhecida — a de tirar
+    `sorteadas` dezenas sem repetir —, seja qual for o passado. Somando todos os
+    concursos, z = soma / raiz(variância total) segue a normal padrão: z ≥ 1,96
+    quer dizer que as dezenas favorecidas pelo sinal saíram mais do que o acaso
+    explica. Tudo usa só o histórico anterior a cada concurso.
+
+    `acertos_jogo` traduz isso em acertos: a média do jogo montado, em cada
+    concurso, com as `escolher` dezenas de sinal mais alto até ali."""
+    cfg = lotteries.get_loteria(loteria)
+    pool = lotteries.numbers(cfg)
+    sorteadas_por_concurso, total, k = cfg["sorteadas"], cfg["total"], cfg["escolher"]
+    if len(draws) < inicio + 30:
+        raise ValueError(
+            f"histórico curto demais para o teste (mínimo {inicio + 30} concursos)"
+        )
+
+    contagem = {x: 0 for x in pool}
+    ultima_vez: dict[int, int] = {}
+    acum = {nome: {"soma": 0.0, "var": 0.0, "acertos": 0, "n": 0} for nome in ("frequencia", "atrasados")}
+    for i, d in enumerate(draws):
+        sorteadas = set(d["dezenas"])
+        if i >= inicio:
+            sinais = {
+                "frequencia": contagem,
+                "atrasados": {x: i - 1 - ultima_vez[x] if x in ultima_vez else i for x in pool},
+            }
+            for nome, sinal in sinais.items():
+                media = sum(sinal.values()) / total
+                var_pop = sum((v - media) ** 2 for v in sinal.values()) / total
+                if var_pop == 0:
+                    continue  # todas empatadas: o sinal não aponta dezena nenhuma
+                a = acum[nome]
+                a["soma"] += sum(sinal[x] for x in sorteadas) - sorteadas_por_concurso * media
+                a["var"] += (
+                    sorteadas_por_concurso * var_pop * (total - sorteadas_por_concurso) / (total - 1)
+                )
+                jogo = sorted(pool, key=lambda x: (-sinal[x], x))[:k]
+                a["acertos"] += len(sorteadas.intersection(jogo))
+                a["n"] += 1
+        for x in sorteadas:
+            contagem[x] += 1
+            ultima_vez[x] = i
+
+    p = sorteadas_por_concurso / total
+    esperado = k * p
+    desvio = sqrt(k * p * (1 - p) * (total - k) / (total - 1))
+    resultado = {}
+    for nome, a in acum.items():
+        z = a["soma"] / sqrt(a["var"]) if a["var"] else 0.0
+        resultado[nome] = {
+            "z": round(z, 2),
+            "nivel": _nivel_sinal(z),
+            "concursos": a["n"],
+            "acertos_jogo": round(a["acertos"] / a["n"], 3) if a["n"] else esperado,
+            "esperado": round(esperado, 3),
+            # quanto a média do jogo varia só por sorte nesses concursos (95%)
+            "margem": round(1.96 * desvio / sqrt(a["n"]), 3) if a["n"] else None,
+        }
+    return {
+        "concursos_testados": len(draws) - inicio,
+        "primeiro_testado": draws[inicio]["concurso"],
+        "ultimo_concurso": draws[-1]["concurso"],
+        "ultima_data": draws[-1]["data"],
+        "sinais": resultado,
     }
 
 

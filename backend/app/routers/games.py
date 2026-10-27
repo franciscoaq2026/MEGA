@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .. import analysis, checker, db, generator, lotteries
+from .. import analysis, checker, db, generator, lotteries, stats
 
 router = APIRouter(tags=["jogos"])
 
@@ -121,7 +121,10 @@ def generate(req: GenerateRequest, loteria: str | None = Query(default=None)):
         "carteira": generator.odds_carteira(req.jogos, lot, espalhar, bilhetes=bilhetes_reais)
         if dezenas == cfg["escolher"]
         else None,
-        "aviso": "Nenhuma estratégia altera a probabilidade real de acerto.",
+        "aviso": (
+            "Nenhuma estratégia muda a chance de um jeito que faça diferença no bolso: "
+            "no histórico real, a melhor ganhou do acaso por centésimos de acerto por jogo."
+        ),
     }
 
 
@@ -136,6 +139,34 @@ def odds_carteira(
     `espalhar` muda a chance de levar ALGUM prêmio (não a do prêmio principal,
     nem o retorno médio): bilhetes espalhados cobrem sorteios diferentes."""
     return generator.odds_carteira(jogos, _lot(loteria), espalhar)
+
+
+# Teste concurso a concurso por loteria, junto com o histórico em que rodou:
+# só refaz quando entra concurso novo.
+_testes_sinais: dict[str, tuple] = {}
+
+
+@router.get("/recomendacao")
+def recomendacao(
+    jogos: int = Query(3, ge=1, le=200),
+    loteria: str | None = Query(default=None),
+):
+    """Botão "Qual estratégia usar?": estratégia recomendada pelo histórico,
+    Espalhar, custo e chance de ganhar algo para `jogos` apostas simples."""
+    lot = _lot(loteria)
+    _somente_avancada(lot)
+    draws = _draws_or_409(lot)
+    historico = (len(draws), draws[-1]["concurso"], tuple(draws[-1]["dezenas"]))
+    guardado = _testes_sinais.get(lot)
+    try:
+        if guardado and guardado[0] == historico:
+            teste = guardado[1]
+        else:
+            teste = stats.sinais_concurso_a_concurso(draws, lot)
+            _testes_sinais[lot] = (historico, teste)
+        return generator.recomendacao(draws, jogos, lot, teste=teste)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.get("/odds")

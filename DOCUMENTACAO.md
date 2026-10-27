@@ -258,7 +258,8 @@ plano ao abrir cada loteria e avisa as telas abertas (`sorteios-atualizados`).
 Controles: estratégia (4 cards), **Quantos jogos (1–20)**, **Dezenas por jogo
 (6–20)**, toggle anti-rateio. Painel lateral de **probabilidades reais**
 (sena/quina/quadra "1 em N" exatos para o tamanho escolhido; custo equivalente
-em apostas simples com preço editável). Card de **backtest** (§6.5). Cada jogo
+em apostas simples com preço editável). Botão **"Qual estratégia usar?"**
+(§6.5.3) e card de **backtest** (§6.5). Cada jogo
 gerado tem botão **"Salvar este jogo"** → vira "jogo do app" no concurso
 indicado.
 
@@ -324,6 +325,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `POST /api/wheel` | fechamento: `{dezenas[7–20], tipo: completa\|reduzida, garantia: 4\|5}` |
 | `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
 | `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
+| `GET /api/recomendacao?jogos` | botão "Qual estratégia usar?": estratégia pelo teste concurso a concurso + Espalhar, custo e chance (§6.5.3) |
 | `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
 | `POST /api/backtest?ultimos&jogos&espalhar` | simulação honesta das 4 estratégias: `ultimos` concursos (a tela usa 50/100/200), `jogos` 1–5 por concurso |
 
@@ -487,6 +489,52 @@ opção é "melhor": o quadro do Espalhar mostra, para a quantidade digitada,
 em quantos concursos de cada 100 ficaria sem prêmio com e sem Espalhar
 ("tanto faz" abaixo de 1 de diferença — sempre na Mega; na Lotofácil o efeito
 máximo é com ~10 jogos: 33 contra 26).
+
+### 6.5.3 Recomendação de estratégia (`stats.sinais_concurso_a_concurso`, `generator.recomendacao`)
+O botão **"Qual estratégia usar?"** (Gerar jogos) mostra, para a quantidade de
+jogos digitada: estratégia, Espalhar, anti-rateio, custo e chance de ganhar
+algo. Só a estratégia depende do histórico; o resto são as contas fixas de
+`odds_carteira` (Espalhar "faz diferença" a partir de meio ponto percentual).
+
+A estratégia sai de um teste **concurso a concurso, sem olhar o futuro**: para
+cada concurso (do 101º em diante), o sinal de cada estratégia é calculado só
+com os anteriores — vezes que cada dezena saiu (Frequência) e concursos sem
+sair (Atrasados) — e soma-se o sinal, menos a média, das dezenas que saíram.
+Num sorteio honesto essa soma tem média zero e variância
+`sorteadas · var · (total − sorteadas)/(total − 1)` (tirar dezenas sem repetir),
+seja qual for o passado; somando os concursos, `z = soma / raiz(variância)`
+segue a normal padrão. Níveis: z ≥ 3 "claro", ≥ 1,96 "fraco", ≤ −1,96
+"contrário". `acertos_jogo` traduz em acertos: a média do jogo montado, em cada
+concurso, com as `escolher` dezenas de sinal mais alto até ali.
+
+Regra: recomenda a estratégia cujo sinal tem z ≥ 1,96 **e** cujo jogo acertou
+mais que o acaso (a de z maior, se as duas passam); senão, Aleatório puro.
+Balanceado não tem sinal por dezena para testar. A rota guarda o teste por
+loteria até entrar concurso novo, então a recomendação acompanha cada sorteio.
+
+Histórico até o concurso 3814 da Lotofácil / 3075 da Mega (26/10/2026):
+
+| | z Frequência | jogo com as mais sorteadas | z Atrasados | jogo com as mais atrasadas | Recomenda |
+| --- | --- | --- | --- | --- | --- |
+| Lotofácil | 3,50 (claro) | 9,033 (acaso 9,000 ± 0,039) | 2,06 (fraco) | 8,998 | Frequência |
+| Mega | 2,50 (fraco) | 0,601 (acaso 0,600 ± 0,025) | −1,28 | 0,580 | Frequência |
+
+O efeito é real nos dois, mas de centésimos de acerto por jogo — em sorteio
+físico, pequenas diferenças entre as bolas bastam para isso. Em 60 históricos
+sintéticos honestos, o z de cada sinal tem média ~0 e desvio ~1 (testado).
+
+### 6.5.4 Qui-quadrado das frequências (`stats.chi_square_frequencias`)
+Cada concurso tira `sorteadas` dezenas **sem repetir**, então a contagem de
+uma dezena varia `n·p·(1−p)` (p = sorteadas/total), e não `n·p` como no
+qui-quadrado de Pearson (bola devolvida ao globo); como as contagens somam
+sempre `n·sorteadas`, a soma é multiplicada por `(total−1)/total`:
+
+    χ² = Σ (contagem − n·p)² / (n·p·(1−p)) · (total−1)/total,   gl = total − 1
+
+Com a fórmula de Pearson, um histórico 100% aleatório da Lotofácil dava χ²
+médio de 10 (e não 24) e o teste praticamente nunca acusava desvio; na Mega,
+53 em vez de 59. Corrigido: Lotofácil χ² = 56,9 (p = 0,0002) e Mega
+χ² = 89,0 (p = 0,007) no histórico até 26/10/2026.
 
 ### 6.6 Métricas e termômetro (analysis.py)
 - **Métricas por jogo**: soma, pares/ímpares, primos, fibonacci, múltiplos de

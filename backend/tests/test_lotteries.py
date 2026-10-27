@@ -577,6 +577,26 @@ def test_chi2_p_valor_conhecido():
     assert abs(stats._gamma_q(24 / 2, 36.415 / 2) - 0.05) < 0.005
 
 
+def test_chi2_sob_acaso_tem_media_igual_aos_graus_de_liberdade():
+    """Sorteios uniformes simulados: a média do qui-quadrado tem de ser `gl`.
+
+    Sem a correção do sorteio sem reposição, a Lotofácil (15 de 25) dava em
+    média 24 x 0,4 = 9,6 — achatando qualquer desvio real."""
+    import random
+
+    from app import stats
+
+    rng = random.Random(42)
+    for loteria, total, sorteadas in (("lofa", 25, 15), ("mega", 60, 6)):
+        valores = []
+        for _ in range(300):
+            draws = [{"dezenas": rng.sample(range(1, total + 1), sorteadas)}
+                     for _ in range(200)]
+            valores.append(stats.chi_square_frequencias(draws, loteria)["chi2"])
+        media = sum(valores) / len(valores)
+        assert abs(media - (total - 1)) < 0.1 * (total - 1), (loteria, media)
+
+
 def test_config_endpoint():
     with make_client() as c:
         cfg = c.get("/api/config?loteria=lofa").json()

@@ -315,10 +315,10 @@ export default function Probabilidades() {
             </div>
             <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-100 pt-2">
               A dezena que mais saiu está {fmt(alea.chi_square.maior_desvio_pct)}% acima da média —
-              e é justamente esse tipo de oscilação que o qui-quadrado acima mede e considera
-              normal. Quanto menos dezenas a loteria sorteia por concurso, maior a oscilação
-              esperada. Seja qual for o histórico, nenhuma dezena tem probabilidade diferente das
-              outras no próximo sorteio.
+              é esse tipo de oscilação que o qui-quadrado acima mede. Quanto menos dezenas a
+              loteria sorteia por concurso, maior a oscilação esperada. Mesmo quando o desvio passa
+              do que o acaso explica, ele não vira previsão: jogar nas mais sorteadas até a véspera
+              não acertou mais que o acaso no histórico, como mostra o backtest.
             </p>
           </div>
         )}

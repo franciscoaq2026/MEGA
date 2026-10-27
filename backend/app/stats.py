@@ -197,7 +197,14 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
 
     Sob acaso puro, o valor esperado da própria estatística é igual aos graus
     de liberdade. Um qui-quadrado próximo de `gl` é a assinatura de um sorteio
-    honesto — e é o que derruba a ideia de "dezena quente"."""
+    honesto — e é o que derruba a ideia de "dezena quente".
+
+    As dezenas de um concurso saem SEM reposição: cada dezena aparece 0 ou 1
+    vez por sorteio, com variância n·p·(1-p), e não n·p como no qui-quadrado
+    de Pearson clássico. Por isso cada termo é dividido por esperado·(1-p).
+    Sem esse fator a estatística fica achatada por (1-p) — 0,4 na Lotofácil,
+    que sorteia 15 de 25 — e um histórico com desvio real parecia "acaso
+    perfeito" (24,2 com 24 gl, quando o valor certo é 60,6)."""
     cfg = lotteries.get_loteria(loteria)
     pool = lotteries.numbers(cfg)
     n = len(draws)
@@ -207,8 +214,11 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
     counts = Counter()
     for d in draws:
         counts.update(d["dezenas"])
-    esperado = n * cfg["sorteadas"] / cfg["total"]
-    chi2 = sum((counts.get(x, 0) - esperado) ** 2 / esperado for x in pool)
+    p_sai = cfg["sorteadas"] / cfg["total"]
+    esperado = n * p_sai
+    chi2 = sum(
+        (counts.get(x, 0) - esperado) ** 2 / (esperado * (1 - p_sai)) for x in pool
+    )
     gl = cfg["total"] - 1
     critico = _chi2_critico(gl)
     p = _gamma_q(gl / 2, chi2 / 2)
@@ -251,10 +261,12 @@ def chi_square_frequencias(draws: list[dict], loteria: str = "mega") -> dict:
         nivel, veredito = "atipico", "desvio grande para o acaso puro"
         explica = (
             f"Um desvio deste tamanho aparece em menos de {num(max(100 * p, 0.01), 2)}% "
-            "dos históricos aleatórios. Mesmo assim não é prova de viés: com "
-            "sorteios físicos, pequenas diferenças entre as bolas e o próprio "
-            "número de testes feitos explicam desvios assim. E, sobretudo, isso "
-            "não torna nenhuma dezena mais provável no PRÓXIMO sorteio."
+            "dos históricos aleatórios. Com sorteios físicos, pequenas "
+            "diferenças entre bolas e globos produzem desvios assim, e eles "
+            "costumam se concentrar em alguns períodos e sumir com a troca do "
+            "material. O que importa para apostar é se dá para prever: escolher "
+            "as dezenas mais sorteadas até ali não acerta mais que o acaso de "
+            "forma que se aproveite — o backtest mostra isso com os seus dados."
         )
 
     return {

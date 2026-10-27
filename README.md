@@ -135,10 +135,15 @@ exatamente 9.
 
 Medido sobre os 3.657 concursos do histórico embutido:
 
-- **Qui-quadrado das frequências: 24,2 com 24 graus de liberdade** (p = 0,45).
-  Sob acaso puro o valor esperado da estatística é igual aos graus de
-  liberdade — ou seja, o resultado é praticamente o do acaso perfeito. A dezena
-  mais sorteada está só 4,6% acima da média. Não existe "dezena quente".
+- **Qui-quadrado das frequências: 60,6 com 24 graus de liberdade** (p = 0,0001).
+  O desvio é maior que o do acaso puro, mas pequeno (a dezena mais sorteada
+  está 4,6% acima da média) e concentrado em dois períodos — concursos 1–500
+  (2003–2010) e 2001–2500 (2020–2022); de 2022 para cá o teste volta a ser
+  compatível com o acaso. E não vira previsão: escolher as 15 mais sorteadas
+  até a véspera acerta, em média, 9,02 a 9,05 dezenas contra 9,00 do acaso —
+  dentro do que testar várias janelas produz por sorte.
+  (Até a versão anterior o app mostrava 24,2 e p = 0,45: o teste ignorava que
+  as dezenas saem sem reposição, o que achatava a estatística por 0,4.)
 - **Toda distribuição observada coincide com a teórica**: pares (média 7,2),
   primos (5,4), moldura (9,6), miolo (5,4), múltiplos de 3 (4,8), repetidas
   do concurso anterior (9,0) e soma (195,2 contra 195 teóricos).
@@ -150,8 +155,11 @@ Medido sobre os 3.657 concursos do histórico embutido:
 
 O veredito do teste tem três níveis e é deliberadamente cauteloso: um teste a
 5% "reprova" 1 de cada 20 históricos honestos, então um p entre 0,01 e 0,05
-é reportado como flutuação normal, não como viés. A Mega-Sena cai justamente
-nesse caso (p = 0,03) — e a tela explica por que isso não é evidência de nada.
+é reportado como flutuação normal, não como viés. A Mega-Sena dá p = 0,006
+(qui-quadrado 89,7 com 59 gl), com o desvio concentrado nos concursos
+2001–2500 (2018–2022); nos demais blocos de 500 concursos o teste é compatível
+com o acaso, e as frequências da 1ª metade do histórico não preveem as da 2ª
+(correlação +0,05).
 
 ## Deploy (Vercel + Turso)
 

@@ -325,7 +325,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
 | `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
 | `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
-| `POST /api/backtest?ultimos=100` | simulação honesta das 4 estratégias |
+| `POST /api/backtest?ultimos&jogos&espalhar` | simulação honesta das 4 estratégias: `ultimos` concursos (a tela usa 50/100/200), `jogos` 1–5 por concurso |
 
 ---
 
@@ -367,10 +367,31 @@ teste: sena 6 dezenas = 1/50.063.860; quadra = 1/2.332; 20 dezenas → sena
 1/1.292 (C(20,6)=38.760 combinações).
 
 ### 6.5 Backtest honesto (checker.py)
-Para cada um dos últimos N concursos (default 100): gera 1 jogo de cada
-estratégia usando **somente** os sorteios anteriores àquele concurso (sem
-vazamento de futuro), com RNG semeado pelo número do concurso
-(reprodutível), e conta acertos. Esperado pelo acaso:
+Para cada um dos últimos N concursos (a tela oferece 50, 100 e 200; a API
+aceita 10–500): gera de 1 a 5 jogos de cada estratégia pelo mesmo `gerar()` do
+botão Gerar (com ou sem Espalhar), usando **somente** os sorteios anteriores
+àquele concurso (sem vazamento de futuro), com RNG semeado pelo número do
+concurso (reprodutível), e conta acertos. Com 1 jogo o resultado é idêntico
+ao do backtest antigo, que sorteava o jogo direto pela estratégia.
+
+Além da média de acertos por jogo, conta o que importa para quem joga alguns
+bilhetes por concurso: **concursos com pelo menos um prêmio**, jogos por faixa
+e quanto voltou nas faixas de valor fixo (Lotofácil 11–13; as de rateio não
+têm valor no histórico). A **régua do acaso** (`acaso`) dá a faixa de 95% de
+cada métrica para jogos ao acaso — binomial exata para concursos com prêmio,
+com a chance de "levar algo" de `odds_carteira` — nesta janela e nas de 50,
+100 e 200, que a tela usa para explicar por que 200 é a mais confiável e por
+que, na Mega, prêmio não serve para comparar (com 3 jogos, o normal em 200
+concursos é de 0 a 2 quadras).
+
+`simular()` guarda os acertos de cada jogo e `resumir()` monta o resultado.
+Os jogos de um concurso não dependem da janela, e o gerador monta os jogos um
+depois do outro (os 3 primeiros de um lote de 5 são o lote de 3); por isso a
+rota guarda uma simulação por loteria/Espalhar e responde dela, na hora,
+qualquer janela e lote menores, até entrar concurso novo. O resumo do
+histórico (contagens, atrasos, combinações já sorteadas) é mantido concurso a
+concurso e passado pronto ao `gerar()`. A primeira simulação de 200 concursos
+× 5 jogos da Lotofácil leva ~11 s; a da Mega, ~2 s. Esperado pelo acaso:
 `escolher · sorteadas / total` — **0,6 acertos/jogo** na Mega (6·6/60) e
 **9,0** na Lotofácil (15·15/25). O resultado empírico de todas as estratégias
 flutua em torno disso, demonstrando a ausência de poder preditivo. Medido nos

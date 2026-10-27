@@ -445,3 +445,52 @@ def test_fallback_nao_emite_bilhete_duplicado():
             )
     finally:
         del lotteries.LOTERIAS["_mini_teste"]
+
+
+def _weighted_sample_com_choices(rng, weights, k):
+    """A versão anterior de _weighted_sample, com rng.choices a cada dezena."""
+    pool = dict(weights)
+    picked = []
+    for _ in range(k):
+        ns = list(pool)
+        chosen = rng.choices(ns, weights=[pool[n] for n in ns], k=1)[0]
+        picked.append(chosen)
+        del pool[chosen]
+    return sorted(picked)
+
+
+def test_weighted_sample_da_os_mesmos_jogos_que_rng_choices():
+    """A versão rápida faz a mesma conta de rng.choices (um random() e bisect
+    nos pesos acumulados): mesma semente, mesmo jogo — os jogos já gerados e o
+    backtest publicado não mudam."""
+    for s in range(400):
+        total, k = (25, 15) if s % 2 else (60, 6)
+        sorteio_pesos = random.Random(10_000 + s)
+        pesos = {n: sorteio_pesos.randint(1, 3000) for n in range(1, total + 1)}
+        if s % 3 == 0:
+            pesos = {n: p / 7 for n, p in pesos.items()}  # pesos fracionários
+        assert generator._weighted_sample(random.Random(s), pesos, k) == _weighted_sample_com_choices(
+            random.Random(s), pesos, k
+        )
+
+
+def test_gerar_com_historico_pronto_da_o_mesmo_lote():
+    """O backtest passa o resumo do histórico pronto (mantido concurso a
+    concurso); o lote tem de ser o mesmo que o gerador montaria sozinho."""
+    for loteria in ("mega", "lofa"):
+        draws = db.load_bundled_seed(loteria)[:400]
+        cfg = lotteries.LOTERIAS[loteria]
+        numeros = lotteries.numbers(cfg)
+        historico = {
+            "counts": generator._freq_counts(draws),
+            "delays": generator._delays_pool(draws, numeros),
+            "premiadas": {tuple(sorted(d["dezenas"])) for d in draws},
+        }
+        for estrategia in generator.GERADORES:
+            for anti_rateio in (False, True):
+                kw = {"loteria": loteria, "espalhar": True, "anti_rateio": anti_rateio}
+                sozinho = generator.gerar(draws, estrategia, 4, cfg["escolher"], rng=random.Random(5), **kw)
+                pronto = generator.gerar(
+                    draws, estrategia, 4, cfg["escolher"], rng=random.Random(5), historico=historico, **kw
+                )
+                assert sozinho == pronto, (loteria, estrategia, anti_rateio)

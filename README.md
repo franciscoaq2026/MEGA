@@ -102,8 +102,9 @@ Todas valem para as duas loterias — o app é parametrizado por
 - **Gerar jogos**: aleatório puro, ponderado por frequência, atrasados e
   balanceado; opção **anti-rateio** (evita combinações populares — não muda a
   chance, mas evita dividir prêmio); painel de **probabilidades reais** por
-  faixa, com o custo equivalente; **backtest** das estratégias contra o
-  histórico.
+  faixa, com o custo equivalente; **backtest** das estratégias contra os
+  últimos 50, 100 ou 200 concursos, com 1 a 5 jogos por concurso e a faixa
+  do que a sorte, sozinha, produz.
 - **Probabilidades**: a chance exata de cada faixa para todos os tamanhos de
   aposta que a Caixa aceita, com custo; quanto volta pelas faixas de prêmio
   fixo; para onde vai o dinheiro apostado; e o **teste do qui-quadrado** sobre

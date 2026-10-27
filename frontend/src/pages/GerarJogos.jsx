@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
 import { addBet, exportJogosCSV } from '../lib/bets.js'
 import { BallRow } from '../components/Ball.jsx'
 import Card from '../components/Card.jsx'
 import Help from '../components/Help.jsx'
-import { formatMoney } from '../lib/format.js'
+import { formatDate, formatMoney } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
 
 // Descrições genéricas: valem para qualquer loteria do hub. O que é
@@ -116,13 +116,384 @@ function ChanceDoLote({ carteira, jogos, referencia }) {
   )
 }
 
+// Teste no passado: janelas e lotes que a tela oferece. 200 vem marcado por
+// ser a janela em que a sorte pesa menos — o próprio resultado mostra quanto.
+const JANELAS_TESTE = [50, 100, 200]
+const JOGOS_TESTE = [1, 2, 3, 4, 5]
+
+const ROTULO_POSICAO = { normal: 'normal', acima: 'acima do normal', abaixo: 'abaixo do normal' }
+const COR_POSICAO = {
+  normal: 'bg-zinc-100 text-zinc-600',
+  acima: 'bg-emerald-100 text-emerald-800',
+  abaixo: 'bg-amber-100 text-amber-800',
+}
+
+// Onde um resultado cai na faixa que a sorte, sozinha, produz.
+const posicao = (valor, min, max) => (valor < min ? 'abaixo' : valor > max ? 'acima' : 'normal')
+
+// "de 0 a 2", ou só "0" quando a faixa é um número só
+const deAte = (min, max) => (min === max ? `${min}` : `de ${min} a ${max}`)
+
+const jogosTexto = (n) => `${n} jogo${n > 1 ? 's' : ''}`
+
+// "11, 12 e 13"
+const lista = (itens) =>
+  itens.length > 1 ? `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}` : `${itens[0] ?? ''}`
+
+const nomeEstrategia = (id) => ESTRATEGIAS.find((e) => e.id === id)?.nome ?? id
+
+function Posicao({ valor, min, max }) {
+  const p = posicao(valor, min, max)
+  return (
+    <span className={`ml-1.5 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${COR_POSICAO[p]}`}>
+      {ROTULO_POSICAO[p]}
+    </span>
+  )
+}
+
+function Escolha({ rotulo, opcoes, valor, onChange }) {
+  return (
+    <div className="text-sm">
+      <span className="block text-zinc-600 mb-1">{rotulo}</span>
+      <div
+        role="group"
+        aria-label={rotulo}
+        className="inline-flex rounded-lg border border-zinc-300 overflow-hidden"
+      >
+        {opcoes.map((o) => (
+          <button
+            key={o}
+            type="button"
+            aria-pressed={valor === o}
+            onClick={() => onChange(o)}
+            className={`px-3 py-1.5 tabular-nums border-l border-zinc-300 first:border-l-0 ${
+              valor === o
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-white text-zinc-700 hover:bg-zinc-50'
+            }`}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// "56× 11 pts · 9× 12 pts" na Lotofácil; "1 quadra" na Mega. Só o que saiu.
+// Cada faixa fica inteira na linha; a quebra, se precisar, é entre elas.
+function PremiosDoTeste({ premios, cfg }) {
+  const saiu = cfg.premios.filter((p) => (premios[p.ac] ?? 0) > 0).reverse()
+  if (!saiu.length) return 'nenhum'
+  return saiu.map((p, i) => {
+    const q = premios[p.ac]
+    return (
+      <span key={p.ac} className="whitespace-nowrap">
+        {i > 0 && ' · '}
+        {/^\d/.test(p.label) ? `${q}× ${p.ac} pts` : `${q} ${p.label.toLowerCase()}${q > 1 ? 's' : ''}`}
+      </span>
+    )
+  })
+}
+
+// Quanto a sorte, sozinha, mexe no resultado em cada janela — a resposta a
+// "50, 100 ou 200?".
+function QualJanela({ resultado, premioRaro, cfg }) {
+  const { acaso, concursos_simulados: n, jogos_por_concurso: jogos } = resultado
+  const j50 = acaso.janelas.find((j) => j.concursos === 50)
+  const j200 = acaso.janelas.find((j) => j.concursos === 200)
+  const pct = (x, total) => `${num((100 * x) / total, 0)}%`
+  return (
+    <div className="rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-600 leading-relaxed">
+      <p className="font-medium text-zinc-800">Por que 200 concursos, e não 50 ou 100?</p>
+      <table className="w-full mt-1.5 tabular-nums">
+        <thead>
+          <tr className="text-zinc-500">
+            <th className="py-0.5 font-medium text-left">Concursos</th>
+            <th className="py-0.5 font-medium text-right">
+              {premioRaro ? 'Acertos por jogo, só por sorte' : 'Ganhar algo, só por sorte'}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {acaso.janelas.map((j) => (
+            <tr key={j.concursos} className={j.concursos === n ? 'font-semibold text-zinc-800' : ''}>
+              <td className="py-0.5">{j.concursos}</td>
+              <td className="py-0.5 text-right">
+                {premioRaro
+                  ? `de ${num(j.media_min)} a ${num(j.media_max)}`
+                  : `de ${j.min} a ${j.max} vezes (${pct(j.min, j.concursos)}–${pct(j.max, j.concursos)})`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {premioRaro ? (
+        <p className="mt-1.5">
+          Na {cfg.nome}, nenhuma das três janelas mede prêmio: com {jogosTexto(jogos)} por concurso, o
+          normal em 200 concursos é {deAte(j200.min, j200.max)}. O que dá para comparar é a média de
+          acertos, e com 50 concursos ela varia de {num(j50.media_min)} a {num(j50.media_max)} só
+          por sorte. <strong>Use 200</strong>: a faixa fica com metade da largura da de 50. Mesmo
+          assim, diferença pequena entre estratégias continua sendo sorte.
+        </p>
+      ) : (
+        <p className="mt-1.5">
+          Quanto menos concursos, mais larga a faixa da sorte. Com 50, uma estratégia pode ganhar
+          algo em {pct(j50.max, 50)} dos concursos e outra em {pct(j50.min, 50)} sem nenhuma ser
+          melhor: o teste vira loteria. <strong>Use 200</strong>: é a janela mais confiável das
+          três. Mas nem ela aponta a estratégia “certa” — a diferença real entre elas é zero ou
+          pequena demais para aparecer. Os últimos 50 servem só para ver o que aconteceu
+          recentemente.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function TesteNoPassado({ cfg }) {
+  const [concursos, setConcursos] = useState(200)
+  const [jogos, setJogos] = useState(3)
+  const [espalhar, setEspalhar] = useState(true)
+  const [resultado, setResultado] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [erro, setErro] = useState(null)
+  const pedido = useRef(0)
+
+  // Trocou a pergunta: o resultado na tela deixa de responder a ela, e uma
+  // resposta ainda a caminho (da pergunta anterior) é descartada.
+  useEffect(() => {
+    pedido.current += 1
+    setResultado(null)
+    setErro(null)
+    setBusy(false)
+  }, [concursos, jogos, espalhar])
+
+  async function rodar() {
+    const meu = ++pedido.current
+    setBusy(true)
+    setErro(null)
+    try {
+      const r = await apiPost(
+        `/backtest?ultimos=${concursos}&jogos=${jogos}&espalhar=${espalhar && jogos > 1}`,
+      )
+      if (meu === pedido.current) setResultado(r)
+    } catch (e) {
+      if (meu === pedido.current) setErro(e.message)
+    } finally {
+      if (meu === pedido.current) setBusy(false)
+    }
+  }
+
+  const r = resultado
+  const a = r?.acaso
+  const n = r?.concursos_simulados
+  const linhas = r ? Object.entries(r.estrategias) : []
+  // Na Mega, prêmio com até 5 jogos é raro demais: o normal em 200 concursos
+  // é 0 a 2. Aí a comparação possível é pela média de acertos.
+  const premioRaro = a ? a.max <= 2 : false
+  const fora = a
+    ? linhas.filter(([, e]) =>
+        premioRaro
+          ? posicao(e.media_acertos, a.media_min, a.media_max) !== 'normal'
+          : posicao(e.concursos_com_premio, a.min, a.max) !== 'normal',
+      )
+    : []
+  const temRetorno = linhas.some(([, e]) => e.retorno_fixo != null)
+  const fixos = cfg.premios.filter((p) => p.label.includes('fixo')).map((p) => p.ac).sort((x, y) => x - y)
+  const variaveis = cfg.premios.filter((p) => !p.label.includes('fixo')).map((p) => p.ac).sort((x, y) => x - y)
+  const menorPremio = r && cfg.premios.find((p) => p.ac === r.faixa_minima)?.label.split(' · ')[0].toLowerCase()
+  const nomesFora = lista(fora.map(([id]) => nomeEstrategia(id)))
+
+  return (
+    <Card
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          Teste no passado: qual estratégia teria se saído melhor?
+          <Help text="Para cada concurso passado, o app gera os jogos de cada estratégia usando só os sorteios anteriores — sem olhar o resultado — e confere com o que saiu de verdade. A faixa normal mostra quanto o resultado varia só por sorte: dentro dela, a diferença entre as estratégias não quer dizer nada." />
+        </span>
+      }
+      subtitle="Simula o seu jeito de jogar nos últimos concursos e compara com o que a sorte, sozinha, produz."
+    >
+      <div className="flex flex-wrap items-end gap-4">
+        <Escolha
+          rotulo="Últimos concursos"
+          opcoes={JANELAS_TESTE}
+          valor={concursos}
+          onChange={setConcursos}
+        />
+        <Escolha rotulo="Jogos por concurso" opcoes={JOGOS_TESTE} valor={jogos} onChange={setJogos} />
+        {jogos > 1 && (
+          <label className="flex items-center gap-2 text-sm pb-1.5">
+            <input
+              type="checkbox"
+              checked={espalhar}
+              onChange={(e) => setEspalhar(e.target.checked)}
+              className="accent-emerald-600"
+            />
+            Espalhar os jogos
+          </label>
+        )}
+        <button
+          onClick={rodar}
+          disabled={busy}
+          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {busy ? 'Simulando…' : 'Rodar teste'}
+        </button>
+      </div>
+      {busy && (
+        <p className="text-xs text-zinc-500 mt-2">
+          {concursos} concursos × {jogosTexto(jogos)} × 4 estratégias. A primeira vez pode levar uns 20
+          segundos; depois, trocar para menos concursos ou menos jogos sai na hora.
+        </p>
+      )}
+      {!r && !busy && !erro && (
+        <p className="text-xs text-zinc-500 mt-2">
+          Prefira 200 concursos: com menos, a sorte pesa mais — o resultado mostra quanto.
+        </p>
+      )}
+      {erro && <p className="text-sm text-red-600 mt-2">{erro}</p>}
+      {r && (
+        <div className="space-y-3 mt-4">
+          <div className="rounded-lg border px-3 py-2 text-xs leading-relaxed bg-zinc-50 border-zinc-200 text-zinc-700">
+            {premioRaro ? (
+              <p>
+                <strong>Na {cfg.nome}, prêmio é raro demais para este teste:</strong> com{' '}
+                {jogosTexto(r.jogos_por_concurso)} por concurso, o acaso dá prêmio ({menorPremio} ou
+                mais) em 1 de cada {fmt(Math.round(1 / a.chance_por_concurso))} concursos. Em {n}{' '}
+                concursos, o normal é {deAte(a.min, a.max)}: pouco demais para separar estratégias.
+                Compare pela <strong>média de acertos por jogo</strong>, que só por sorte fica entre{' '}
+                <strong>
+                  {num(a.media_min)} e {num(a.media_max)}
+                </strong>
+                .
+              </p>
+            ) : (
+              <p>
+                <strong>Faixa normal da sorte:</strong> com {jogosTexto(r.jogos_por_concurso)}
+                {r.espalhar ? ' espalhados' : ''} por concurso, o acaso dá algum prêmio em{' '}
+                {porCem(100 * a.chance_por_concurso)} de cada 100 concursos. Em {n} concursos, o
+                normal é ganhar algo de{' '}
+                <strong>
+                  {a.min} a {a.max} vezes
+                </strong>
+                , com qualquer estratégia.
+              </p>
+            )}
+            <p className="mt-1">
+              {fora.length === 0 ? (
+                <>
+                  <strong>Todas ficaram dentro da faixa normal.</strong> A diferença entre elas é
+                  sorte: nenhuma estratégia está melhor que as outras.
+                </>
+              ) : (
+                <>
+                  <strong>
+                    {nomesFora} {fora.length > 1 ? 'ficaram' : 'ficou'} fora da faixa normal.
+                  </strong>{' '}
+                  Com 4 estratégias disputando, alguma cair fora por sorte acontece de vez em
+                  quando — não quer dizer que funcione (nem que seja ruim).
+                </>
+              )}
+            </p>
+          </div>
+
+          {premioRaro ? (
+            // Prêmio quase nunca sai: o que compara é a média de acertos, e
+            // ela vem logo depois do nome (cabe no celular sem rolar).
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-xs text-zinc-500 border-b border-zinc-200 align-bottom">
+                  <th className="py-1.5 pr-3 font-medium">Estratégia</th>
+                  <th className="py-1.5 font-medium text-right">
+                    Acertos por jogo
+                    <span className="block font-normal">
+                      normal: {num(a.media_min)} a {num(a.media_max)}
+                    </span>
+                  </th>
+                  <th className="py-1.5 pl-3 font-medium text-right">Prêmios</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map(([id, e]) => (
+                  <tr key={id} className="border-b border-zinc-100 last:border-0">
+                    <td className="py-1.5 pr-3">{nomeEstrategia(id)}</td>
+                    <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
+                      <strong>{num(e.media_acertos)}</strong>
+                      <Posicao valor={e.media_acertos} min={a.media_min} max={a.media_max} />
+                    </td>
+                    <td className="py-1.5 pl-3 text-right text-xs text-zinc-600">
+                      <PremiosDoTeste premios={e.premios} cfg={cfg} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[32rem] text-sm text-left">
+                <thead>
+                  <tr className="text-xs text-zinc-500 border-b border-zinc-200 align-bottom">
+                    <th className="py-1.5 pr-3 font-medium">Estratégia</th>
+                    <th className="py-1.5 font-medium text-right">
+                      Concursos com prêmio
+                      <span className="block font-normal">
+                        normal: {a.min} a {a.max}
+                      </span>
+                    </th>
+                    <th className="py-1.5 pl-3 font-medium">Jogos premiados</th>
+                    {temRetorno && <th className="py-1.5 pl-3 font-medium text-right">Voltou</th>}
+                    <th className="py-1.5 pl-3 font-medium text-right whitespace-nowrap">
+                      Acertos por jogo
+                      <span className="block font-normal">
+                        normal: {num(a.media_min)} a {num(a.media_max)}
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map(([id, e]) => (
+                    <tr key={id} className="border-b border-zinc-100 last:border-0">
+                      <td className="py-1.5 pr-3">{nomeEstrategia(id)}</td>
+                      <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
+                        <strong>{e.concursos_com_premio}</strong> de {n}
+                        <Posicao valor={e.concursos_com_premio} min={a.min} max={a.max} />
+                      </td>
+                      <td className="py-1.5 pl-3 text-xs text-zinc-600">
+                        <PremiosDoTeste premios={e.premios} cfg={cfg} />
+                      </td>
+                      {temRetorno && (
+                        <td className="py-1.5 pl-3 text-right tabular-nums">
+                          {formatMoney(e.retorno_fixo)}
+                        </td>
+                      )}
+                      <td className="py-1.5 pl-3 text-right tabular-nums">{num(e.media_acertos)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="text-xs text-zinc-500">
+            Concursos {r.primeiro_concurso} a {r.ultimo_concurso} ({formatDate(r.primeira_data)} a{' '}
+            {formatDate(r.ultima_data)}). Cada estratégia custaria{' '}
+            <strong>{formatMoney(r.gasto)}</strong> ({n} concursos × {jogosTexto(r.jogos_por_concurso)}{' '}
+            × {formatMoney(cfg.preco)}).{' '}
+            {temRetorno
+              ? `“Voltou” soma só os prêmios de valor fixo (${lista(fixos)} acertos); ${lista(variaveis)} acertos mudam a cada concurso e aparecem só na contagem de jogos premiados.`
+              : `Os prêmios da ${cfg.nome} mudam a cada concurso, por isso não há coluna de quanto voltou.`}
+          </p>
+
+          <QualJanela resultado={r} premioRaro={premioRaro} cfg={cfg} />
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function GerarJogos() {
   const { code, cfg } = useLottery()
-  // Acertos que o PURO ACASO entrega por jogo: escolher x sorteadas / total.
-  // Depende da loteria (0,6 na Mega; 9,0 na Lotofácil) — usar a constante da
-  // Mega em qualquer lugar transformaria o backtest da Lotofácil em absurdo.
-  const esperadoAcaso = (cfg.escolher * cfg.sorteadas) / cfg.total
-  const faixaMinima = Math.min(...cfg.premios.map((p) => p.ac))
   const dezenasFixas = cfg.escolher === cfg.maxEscolher
   // Formato da aposta. 'simples' = N bilhetes de escolher dezenas, comprados
   // separados. 'multipla' = UM bilhete com mais dezenas (o fechamento).
@@ -143,11 +514,6 @@ export default function GerarJogos() {
   const [error, setError] = useState(null)
   const [concursoSalvar, setConcursoSalvar] = useState('')
   const [salvos, setSalvos] = useState({}) // índice do jogo -> concurso salvo
-  const [backtest, setBacktest] = useState(null)
-  const [backtestBusy, setBacktestBusy] = useState(false)
-  const [backtestError, setBacktestError] = useState(null)
-  // O backend manda o esperado calculado; o valor local é só o fallback.
-  const baseAcaso = backtest?.esperado_por_jogo ?? esperadoAcaso
 
   useEffect(() => {
     apiGet('/status')
@@ -262,18 +628,6 @@ export default function GerarJogos() {
       novos[i] = concursoSalvar
     }
     setSalvos(novos)
-  }
-
-  async function rodarBacktest() {
-    setBacktestBusy(true)
-    setBacktestError(null)
-    try {
-      setBacktest(await apiPost('/backtest?ultimos=100'))
-    } catch (e) {
-      setBacktestError(e.message)
-    } finally {
-      setBacktestBusy(false)
-    }
   }
 
   async function gerar() {
@@ -736,78 +1090,7 @@ export default function GerarJogos() {
         </Card>
       )}
 
-      {cfg.avancada && (
-      <Card
-        title={
-          <span className="inline-flex items-center gap-1.5">
-            As estratégias funcionam? Backtest honesto
-            <Help
-              text={`Teste imparcial: joga cada estratégia contra os últimos 100 sorteios REAIS, usando só o que se sabia antes de cada um (sem trapaça). Se alguma estratégia funcionasse, sua média ficaria acima de ${num(esperadoAcaso, 1)} acerto/jogo (o que o acaso entrega nesta loteria: ${cfg.escolher} × ${cfg.sorteadas} ÷ ${cfg.total}). Rode e veja: todas empatam com o puro acaso.`}
-            />
-          </span>
-        }
-        subtitle={`Simula jogar cada estratégia nos últimos 100 concursos, usando só o histórico anterior a cada sorteio — compare com o esperado pelo acaso (${num(esperadoAcaso, 1)} acerto por jogo)`}
-      >
-        {!backtest && (
-          <button
-            onClick={rodarBacktest}
-            disabled={backtestBusy}
-            className="px-4 py-2 rounded-lg border border-zinc-300 bg-white text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
-          >
-            {backtestBusy ? 'Simulando…' : 'Rodar backtest (últimos 100 concursos)'}
-          </button>
-        )}
-        {backtestError && <p className="text-sm text-red-600 mt-2">{backtestError}</p>}
-        {backtest && (
-          <div className="space-y-3">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="text-xs text-zinc-500 border-b border-zinc-200">
-                  <th className="py-1.5 font-medium">Estratégia</th>
-                  <th className="py-1.5 font-medium text-right">Média de acertos/jogo</th>
-                  <th className="py-1.5 font-medium text-right">
-                    vs. acaso ({num(baseAcaso, 1)})
-                  </th>
-                  <th className="py-1.5 font-medium text-right">Concursos com prêmio</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(backtest.estrategias).map(([nome, r]) => {
-                  const premiados = Object.entries(r.distrib ?? {}).reduce(
-                    (s, [ac, qtd]) => (Number(ac) >= faixaMinima ? s + qtd : s),
-                    0,
-                  )
-                  return (
-                    <tr key={nome} className="border-b border-zinc-100 last:border-0">
-                      <td className="py-1.5">
-                        {ESTRATEGIAS.find((e) => e.id === nome)?.nome ?? nome}
-                      </td>
-                      <td className="py-1.5 text-right font-semibold tabular-nums">
-                        {num(r.media_acertos)}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
-                        {(r.media_acertos - baseAcaso >= 0 ? '+' : '') +
-                          num(r.media_acertos - baseAcaso)}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums text-zinc-500">
-                        {premiados}/{backtest.concursos_simulados}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <p className="text-xs text-zinc-500">
-              Concursos {backtest.primeiro_concurso}–{backtest.ultimo_concurso} · todas as
-              estratégias flutuam em torno de {num(baseAcaso, 1)} — nenhuma “sabe” algo sobre o
-              próximo sorteio. Se alguma parecesse muito acima, seria sorte da amostra, não
-              previsão. A coluna da direita conta os concursos em que o jogo daquela estratégia
-              chegou a {faixaMinima} acertos ou mais (a faixa mínima premiada): também empatam.
-            </p>
-          </div>
-        )}
-      </Card>
-      )}
+      {cfg.avancada && <TesteNoPassado cfg={cfg} />}
     </div>
   )
 }

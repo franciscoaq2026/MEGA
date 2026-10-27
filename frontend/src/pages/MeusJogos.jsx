@@ -302,7 +302,8 @@ function DesempenhoEstrategias({ dados, cfg, code }) {
             <Link to={`/${code}/gerar`} className="text-emerald-700 underline">
               Gerar jogos
             </Link>
-            : ele joga cada estratégia nos últimos 100 concursos.
+            : ele joga cada estratégia nos últimos 50, 100 ou 200 concursos, com 1 a 5 jogos por
+            concurso.
           </p>
         )}
       </div>

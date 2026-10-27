@@ -14,9 +14,10 @@ Tudo é parametrizado pela loteria; nada assume "6 de 60".
 """
 
 import random
+from bisect import bisect
 from collections import Counter
 from functools import lru_cache, partial
-from itertools import combinations
+from itertools import accumulate, combinations
 from math import comb, sqrt
 
 from . import analysis, lotteries
@@ -34,13 +35,21 @@ def _numbers(loteria="mega") -> list[int]:
 
 
 def _weighted_sample(rng: random.Random, weights: dict[int, float], k: int) -> list[int]:
-    pool = dict(weights)
+    """Sorteia k dezenas sem repetição, cada uma com chance proporcional ao peso.
+
+    Faz a mesma conta de `rng.choices(ns, weights=..., k=1)` a cada dezena (um
+    random() e bisect nos pesos acumulados), então devolve exatamente os mesmos
+    jogos para a mesma semente — só sem refazer dicionário e listas a cada
+    passo. O Espalhar chama isto centenas de vezes por pedido, e o backtest com
+    vários jogos por concurso, dezenas de milhares."""
+    ns = list(weights)
+    ws = [weights[n] for n in ns]
     picked: list[int] = []
     for _ in range(k):
-        ns = list(pool)
-        chosen = rng.choices(ns, weights=[pool[n] for n in ns], k=1)[0]
-        picked.append(chosen)
-        del pool[chosen]
+        cum = list(accumulate(ws))
+        i = bisect(cum, rng.random() * (cum[-1] + 0.0), 0, len(cum) - 1)
+        picked.append(ns.pop(i))
+        ws.pop(i)
     return sorted(picked)
 
 
@@ -103,13 +112,21 @@ def _sum_tolerance(n_pool: int, k: int) -> float:
     return sqrt(var)
 
 
+def ordem_por_frequencia(numbers: list[int], counts: Counter) -> list[int]:
+    """Dezenas da mais para a menos sorteada (empate: a menor primeiro). A
+    metade de cima são as "quentes" do Balanceado."""
+    return sorted(numbers, key=lambda n: (-counts.get(n, 0), n))
+
+
 def balanceado(
     rng: random.Random, draws: list[dict], k: int, numbers: list[int] | None = None, max_tries: int = 400,
-    counts: Counter | None = None,
+    counts: Counter | None = None, ordem: list[int] | None = None,
 ) -> list[int]:
     numbers = numbers or _numbers()
-    counts = _freq_counts(draws) if counts is None else counts
-    ordered = sorted(numbers, key=lambda n: (-counts.get(n, 0), n))
+    if ordem is None:
+        counts = _freq_counts(draws) if counts is None else counts
+        ordem = ordem_por_frequencia(numbers, counts)
+    ordered = ordem
     metade = len(numbers) // 2
     hot, cold = ordered[:metade], ordered[metade:]
 
@@ -235,8 +252,14 @@ def gerar(
     rng: random.Random | None = None,
     loteria: str = "mega",
     espalhar: bool = False,
+    historico: dict | None = None,
 ) -> list[dict]:
     """Gera `jogos` apostas pela estratégia escolhida.
+
+    `historico` é o resumo de `draws` já pronto — "counts" (vezes que cada
+    dezena saiu), "delays" (concursos sem sair) e "premiadas" (combinações já
+    sorteadas) —, para quem gera muitas vezes sobre históricos que só crescem
+    (o backtest) não recontar tudo a cada pedido. Sem ele, sai de `draws`.
 
     `espalhar` faz cada novo jogo ser o candidato que MENOS se sobrepõe aos já
     gerados. Só considera os jogos do MESMO pedido — nunca as apostas salvas
@@ -275,13 +298,24 @@ def gerar(
     # O resumo do histórico (contagem ou atraso de cada dezena) sai uma vez por
     # pedido. Antes era refeito a cada candidato — até 120 por bilhete com o
     # Espalhar —, e 50 jogos pela Frequência levavam ~5 s.
+    historico = historico or {}
     resumo = {}
     if estrategia in ("frequencia", "balanceado"):
-        resumo["counts"] = _freq_counts(draws)
+        resumo["counts"] = historico["counts"] if "counts" in historico else _freq_counts(draws)
+        if estrategia == "balanceado":
+            # Quentes/frias não mudam dentro do pedido: ordenar uma vez, não
+            # a cada um dos até 120 candidatos por jogo.
+            resumo["ordem"] = ordem_por_frequencia(numbers, resumo["counts"])
     elif estrategia == "atrasados":
-        resumo["delays"] = _delays_pool(draws, numbers)
+        resumo["delays"] = (
+            historico["delays"] if "delays" in historico else _delays_pool(draws, numbers)
+        )
     gerador = partial(GERADORES[estrategia], **resumo)
-    premiadas = {tuple(sorted(d["dezenas"])) for d in draws}
+    premiadas = (
+        historico["premiadas"]
+        if "premiadas" in historico
+        else {tuple(sorted(d["dezenas"])) for d in draws}
+    )
     resultado = []
     vistos: set[tuple] = set()
     escolhidos: list[set[int]] = []
@@ -299,9 +333,11 @@ def gerar(
         tentativas = 120 if (espalhar and escolhidos) else 60
         for _tent in range(tentativas):
             cand = gerador(rng, draws, dezenas, numbers)
-            cand_motivos = padrao_popular(cand, premiadas, cfg)
             if tuple(cand) in vistos:
                 continue
+            # Os padrões só filtram com o anti-rateio; sem ele, saem no fim e
+            # só para o jogo escolhido, não para cada um dos até 120 candidatos.
+            cand_motivos = padrao_popular(cand, premiadas, cfg) if anti_rateio else None
             if anti_rateio and cand_motivos:
                 continue
             if not (espalhar and escolhidos):
@@ -330,6 +366,8 @@ def gerar(
                         break
                 jogo = cand
                 motivos = padrao_popular(jogo, premiadas, cfg)
+        if motivos is None:
+            motivos = padrao_popular(jogo, premiadas, cfg)
 
         vistos.add(tuple(jogo))
         escolhidos.append(set(jogo))

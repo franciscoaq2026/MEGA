@@ -336,17 +336,49 @@ def check(req: CheckRequest, loteria: str | None = Query(default=None)):
     return {"resultados": checker.conferir_apostas([a.model_dump() for a in req.apostas], lot)}
 
 
+# Simulações do backtest já feitas, por instância: uma por loteria e por
+# Espalhar ligado/desligado. Com 5 jogos em 200 concursos da Lotofácil a conta
+# leva alguns segundos; depois dela, as janelas menores e os lotes menores saem
+# da mesma simulação na hora (ver checker.simular). Vale até entrar concurso
+# novo — a chave inclui o último sorteio.
+_simulacoes: dict[tuple, dict] = {}
+
+
 @router.post("/backtest")
 def backtest(
     ultimos: int = Query(100, ge=10, le=500),
     loteria: str | None = Query(default=None),
+    jogos: int = Query(1, ge=1, le=5),
+    espalhar: bool = Query(True),
 ):
-    """Teste honesto: joga cada estratégia nos últimos N concursos usando só
-    o histórico anterior de cada um — mostra que nenhuma supera o acaso."""
+    """Teste honesto: joga cada estratégia nos últimos N concursos, com
+    `jogos` apostas por concurso, usando só o histórico anterior de cada um —
+    mostra que nenhuma supera o acaso."""
     lot = _lot(loteria)
     _somente_avancada(lot)
     draws = db.get_all_draws_asc(lot)
-    try:
-        return checker.backtest(draws, ultimos, loteria=lot)
-    except ValueError as e:
-        raise HTTPException(409, str(e)) from e
+    ultimo = (draws[-1]["concurso"], tuple(draws[-1]["dezenas"])) if draws else None
+    chave = (lot, espalhar)
+    sim = _simulacoes.get(chave)
+    cobre = (
+        sim is not None
+        and sim["historico"] == (len(draws), ultimo)
+        and sim["jogos"] >= jogos
+        and sim["ultimos"] >= ultimos
+    )
+    if not cobre:
+        # Refaz cobrindo também o que a simulação anterior cobria, para trocar
+        # de janela ou de quantidade de jogos não desfazer o que já foi feito.
+        mesmo = sim is not None and sim["historico"] == (len(draws), ultimo)
+        ultimos_sim = max(ultimos, sim["ultimos"]) if mesmo else ultimos
+        jogos_sim = max(jogos, sim["jogos"]) if mesmo else jogos
+        try:
+            sim = checker.simular(
+                draws, ultimos_sim, loteria=lot, jogos=jogos_sim, espalhar=espalhar
+            )
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
+        sim["historico"] = (len(draws), ultimo)
+        sim["ultimos"] = ultimos_sim
+        _simulacoes[chave] = sim
+    return checker.resumir(sim, ultimos, jogos)

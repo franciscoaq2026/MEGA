@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import tempfile
 
@@ -258,3 +259,34 @@ def test_acertos_esperados_endpoint():
         assert c.get("/api/acertos-esperados").json()["esperado"] == 0.6  # Mega
         # fora do que a Caixa aceita
         assert c.get("/api/acertos-esperados?loteria=lofa&dezenas=21").status_code == 400
+
+
+def test_backtest_varios_jogos_e_janelas():
+    """A tela pede 50/100/200 concursos e 1 a 5 jogos por concurso. Depois da
+    primeira simulação, janelas e lotes menores saem dela — e dão o mesmo que
+    simular de novo."""
+    import random
+
+    from app import checker
+
+    draws = [
+        {"concurso": i, "data": f"2024-01-{i % 28 + 1:02d}",
+         "dezenas": sorted(random.Random(i).sample(range(1, 26), 15))}
+        for i in range(1, 161)
+    ]
+    db.init_db()
+    db.upsert_draws(draws, "lofa")
+    with make_client() as c:
+        r = c.post("/api/backtest?loteria=lofa&ultimos=100&jogos=3&espalhar=true")
+        assert r.status_code == 200
+        body = r.json()
+        assert (body["concursos_simulados"], body["jogos_por_concurso"], body["espalhar"]) == (100, 3, True)
+        assert [j["concursos"] for j in body["acaso"]["janelas"]] == [50, 100, 200]
+
+        menor = c.post("/api/backtest?loteria=lofa&ultimos=50&jogos=2&espalhar=true").json()
+        # o banco é dividido com outros testes: o histórico é o que está nele
+        historico = db.get_all_draws_asc("lofa")
+        direto = checker.backtest(historico, ultimos=50, loteria="lofa", jogos=2, espalhar=True)
+        assert menor == json.loads(json.dumps(direto))
+
+        assert c.post("/api/backtest?loteria=lofa&ultimos=50&jogos=6").status_code == 422

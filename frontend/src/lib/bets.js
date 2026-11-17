@@ -15,7 +15,8 @@ export function betValida(bet, loteria) {
   const cfg = getLoteria(loteria)
   if (!bet || typeof bet !== 'object') return false
   if (!Number.isInteger(Number(bet.concurso)) || Number(bet.concurso) < 1) return false
-  if (bet.origem !== 'manual' && bet.origem !== 'app') return false
+  if (!['manual', 'app', 'bolao'].includes(bet.origem)) return false
+  if (bet.origem === 'bolao' && !String(bet.bolao ?? '').trim()) return false
   const dz = bet.dezenas
   if (!Array.isArray(dz)) return false
   if (dz.length < cfg.escolher || dz.length > cfg.maxEscolher) return false
@@ -119,27 +120,47 @@ function novoId() {
   return `bet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function addBet({ loteria = 'mega', concurso, origem, estrategia = null, espalhar = null, dezenas }) {
+export function addBet(dados) {
+  return addBets(dados.loteria ?? 'mega', [dados])[0]
+}
+
+// Vários jogos de uma vez (o "colar jogos" de um bolão): uma leitura e uma
+// escrita no navegador em vez de uma por jogo.
+export function addBets(loteria, lista) {
   const bets = loadBets(loteria)
-  const bet = {
-    id: novoId(),
-    loteria,
-    concurso: Number(concurso),
-    origem, // 'manual' | 'app'
-    estrategia,
-    espalhar, // true/false = como estava no lote; null = não se aplica
-    dezenas: [...dezenas].sort((a, b) => a - b),
-    criado_em: new Date().toISOString(),
-  }
-  bets.push(bet)
+  const novos = lista.map(
+    ({ concurso, origem, estrategia = null, espalhar = null, dezenas, bolao = null, cotas = null, cotas_total = null }) => {
+      const doBolao = origem === 'bolao'
+      return {
+        id: novoId(),
+        loteria,
+        concurso: Number(concurso),
+        origem, // 'manual' | 'app' | 'bolao'
+        estrategia,
+        espalhar, // true/false = como estava no lote; null = não se aplica
+        dezenas: [...dezenas].sort((a, b) => a - b),
+        criado_em: new Date().toISOString(),
+        // Bolão: nome (único dentro do concurso) e cotas — suas / total.
+        bolao: doBolao ? String(bolao).trim() : null,
+        cotas: doBolao && cotas ? Number(cotas) : null,
+        cotas_total: doBolao && cotas_total ? Number(cotas_total) : null,
+      }
+    },
+  )
+  bets.push(...novos)
   saveBets(loteria, bets)
-  cloudPost(bet)
-  return bet
+  for (const bet of novos) cloudPost(bet)
+  return novos
 }
 
 export function removeBet(loteria, id) {
-  saveBets(loteria, loadBets(loteria).filter((b) => b.id !== id))
-  cloudDelete(id)
+  removeBets(loteria, [id])
+}
+
+export function removeBets(loteria, ids) {
+  const fora = new Set(ids)
+  saveBets(loteria, loadBets(loteria).filter((b) => !fora.has(b.id)))
+  for (const id of ids) cloudDelete(id)
 }
 
 export function exportBets(loteria = 'mega') {

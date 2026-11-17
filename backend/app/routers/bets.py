@@ -14,6 +14,10 @@ from .. import auth, db, lotteries
 
 router = APIRouter(prefix="/bets", tags=["bets"])
 
+# manual = escolhido por você; app = gerado aqui; bolao = jogo de um bolão
+# (de outra pessoa ou lotérica), fora do comparativo "você vs. app".
+ORIGENS = ("manual", "app", "bolao")
+
 
 def _conta(x_session_id: str | None) -> str:
     sessao = auth.validar_sessao(x_session_id)
@@ -37,11 +41,25 @@ class BetIn(BaseModel):
     espalhar_deduzido: bool | None = None
     dezenas: list[int]
     criado_em: str | None = None
+    # Bolão: os jogos de um mesmo bolão compartilham o nome (único dentro do
+    # concurso) e as cotas — quantas são suas e quantas o bolão tem. Só
+    # valem para origem "bolao"; nos demais jogos ficam None.
+    bolao: str | None = Field(default=None, max_length=60)
+    cotas: int | None = Field(default=None, ge=1, le=1000)
+    cotas_total: int | None = Field(default=None, ge=1, le=1000)
 
     @model_validator(mode="after")
     def _valida(self):
-        if self.origem not in ("manual", "app"):
-            raise ValueError("origem deve ser 'manual' ou 'app'")
+        if self.origem not in ORIGENS:
+            raise ValueError("origem deve ser 'manual', 'app' ou 'bolao'")
+        if self.origem == "bolao":
+            self.bolao = (self.bolao or "").strip()
+            if not self.bolao:
+                raise ValueError("bolão precisa de um nome")
+            if self.cotas and self.cotas_total and self.cotas > self.cotas_total:
+                raise ValueError("suas cotas não podem passar do total de cotas do bolão")
+        else:
+            self.bolao = self.cotas = self.cotas_total = None
         cfg = lotteries.get_loteria(self.loteria)
         self.loteria = cfg["code"]
         dz = self.dezenas
@@ -72,6 +90,9 @@ class BetIn(BaseModel):
             "espalhar_deduzido": self.espalhar_deduzido if self.espalhar is not None else None,
             "dezenas": self.dezenas,
             "criado_em": self.criado_em or datetime.now(timezone.utc).isoformat(),
+            "bolao": self.bolao,
+            "cotas": self.cotas,
+            "cotas_total": self.cotas_total,
         }
 
 

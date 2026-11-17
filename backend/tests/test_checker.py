@@ -153,3 +153,34 @@ def test_faixa_binomial_cobre_95_por_cento():
         dentro = sum(comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(lo, hi + 1))
         assert dentro >= 0.95, (n, p, lo, hi)
     assert checker._faixa_binomial(10, 0.0) == (0, 0)
+
+
+def test_premios_da_aposta_multipla():
+    """Aposta múltipla vale por todas as simples contidas nela."""
+    resultado = [1, 2, 3, 4, 5, 6]
+    # Mega, 7 dezenas, 6 acertos: 1 sena + 6 quinas
+    c = checker.conferir([1, 2, 3, 4, 5, 6, 7], resultado)
+    assert c["apostas_simples"] == 7
+    assert [(p["faixa"], p["quantidade"]) for p in c["premios"]] == [("sena", 1), ("quina", 6)]
+    assert c["tem_rateio"] is True
+    # Mega, 10 dezenas, 4 acertos: C(4,4)·C(6,2) = 15 quadras
+    c = checker.conferir([1, 2, 3, 4, 40, 41, 42, 43, 44, 45], resultado)
+    assert [(p["faixa"], p["quantidade"]) for p in c["premios"]] == [("quadra", 15)]
+    # simples sem prêmio: lista vazia
+    c = checker.conferir([1, 2, 3, 40, 50, 60], resultado)
+    assert c["premios"] == [] and c["premio_fixo"] == 0 and c["apostas_simples"] == 1
+    # Lotofácil, 16 dezenas com 13 acertos: 3 de 13 (C(13,13)·C(3,2)) + 13 de 12
+    # (C(13,12)·C(3,3)) = R$ 3·35 + 13·14 = R$ 287 de prêmio fixo
+    sorteio = list(range(1, 16))
+    jogo = list(range(1, 14)) + [16, 17, 18]
+    c = checker.conferir(jogo, sorteio, "lofa")
+    assert [(p["acertos"], p["quantidade"]) for p in c["premios"]] == [(13, 3), (12, 13)]
+    assert c["premio_fixo"] == 287.0 and c["tem_rateio"] is False
+    # confere com a força bruta
+    from itertools import combinations
+    bruto = {}
+    for s in combinations(jogo, 15):
+        a = len(set(s) & set(sorteio))
+        if a >= 11:
+            bruto[a] = bruto.get(a, 0) + 1
+    assert bruto == {p["acertos"]: p["quantidade"] for p in c["premios"]}

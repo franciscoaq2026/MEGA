@@ -200,3 +200,23 @@ def test_backfill_espalhar_e_sync_nao_apaga(tmp_path, monkeypatch):
     # outra conta não sobrescreve o jogo de mesmo id
     db.upsert_bets("intruso", [dict(base, id="gravado", concurso=1)])
     assert [b["concurso"] for b in db.list_bets("owner") if b["id"] == "gravado"] == [3000]
+
+
+def test_bolao_gravado_com_cotas():
+    with make_client() as c:
+        h = {"X-Session-Id": _login(c)}
+        base = {"concurso": 3100, "origem": "bolao", "bolao": " Trabalho ", "cotas": 2, "cotas_total": 10}
+        r = c.post("/api/bets", json={**base, "id": "b1", "dezenas": list(range(1, 11))}, headers=h)
+        assert r.status_code == 200
+        b = {x["id"]: x for x in c.get("/api/bets", headers=h).json()["bets"]}["b1"]
+        assert (b["origem"], b["bolao"], b["cotas"], b["cotas_total"]) == ("bolao", "Trabalho", 2, 10)
+        assert len(b["dezenas"]) == 10
+        # bolão sem nome e cotas acima do total são recusados
+        assert c.post("/api/bets", json={**base, "bolao": " ", "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h).status_code == 422
+        assert c.post("/api/bets", json={**base, "cotas": 11, "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h).status_code == 422
+        # mais de 20 dezenas não existe na Mega
+        assert c.post("/api/bets", json={**base, "dezenas": list(range(1, 22))}, headers=h).status_code == 422
+        # campos de bolão são descartados fora da origem bolao
+        c.post("/api/bets", json={**base, "origem": "manual", "id": "m1", "dezenas": [1, 2, 3, 4, 5, 6]}, headers=h)
+        m = {x["id"]: x for x in c.get("/api/bets", headers=h).json()["bets"]}["m1"]
+        assert (m["bolao"], m["cotas"], m["cotas_total"]) == (None, None, None)

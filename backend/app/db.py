@@ -96,7 +96,10 @@ SCHEMA = (
         dezenas TEXT NOT NULL,
         criado_em TEXT NOT NULL,
         espalhar INTEGER,
-        espalhar_deduzido INTEGER
+        espalhar_deduzido INTEGER,
+        bolao TEXT,
+        cotas INTEGER,
+        cotas_total INTEGER
     )
     """,
 )
@@ -224,6 +227,9 @@ _BETS_COLUNAS_NOVAS = (
     ("loteria", "TEXT NOT NULL DEFAULT 'mega'"),  # suporte multi-loteria
     ("espalhar", "INTEGER"),  # 1/0 = ligado/desligado; NULL = não se aplica ou não registrado
     ("espalhar_deduzido", "INTEGER"),  # 1 = valor veio do estudo, não da hora em que foi salvo
+    ("bolao", "TEXT"),  # nome do bolão (só origem 'bolao')
+    ("cotas", "INTEGER"),  # cotas suas no bolão
+    ("cotas_total", "INTEGER"),  # total de cotas do bolão
 )
 
 
@@ -443,12 +449,13 @@ def delete_session(session_id: str) -> None:
 _BET_INSERT = (
     "INSERT INTO bets "
     "(id, account_id, loteria, concurso, origem, estrategia, dezenas, criado_em, "
-    "espalhar, espalhar_deduzido) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "espalhar, espalhar_deduzido, bolao, cotas, cotas_total) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
     "ON CONFLICT(id) DO UPDATE SET "
     "loteria = excluded.loteria, concurso = excluded.concurso, origem = excluded.origem, "
     "estrategia = excluded.estrategia, dezenas = excluded.dezenas, "
     "criado_em = excluded.criado_em, "
+    "bolao = excluded.bolao, cotas = excluded.cotas, cotas_total = excluded.cotas_total, "
     "espalhar = COALESCE(excluded.espalhar, bets.espalhar), "
     "espalhar_deduzido = CASE WHEN excluded.espalhar IS NULL "
     "THEN bets.espalhar_deduzido ELSE excluded.espalhar_deduzido END "
@@ -468,6 +475,9 @@ def _bet_params(account_id: str, bet: dict) -> tuple:
         bet.get("criado_em") or "",
         None if bet.get("espalhar") is None else int(bool(bet["espalhar"])),
         None if bet.get("espalhar") is None else int(bool(bet.get("espalhar_deduzido"))),
+        bet.get("bolao"),
+        bet.get("cotas"),
+        bet.get("cotas_total"),
     )
 
 

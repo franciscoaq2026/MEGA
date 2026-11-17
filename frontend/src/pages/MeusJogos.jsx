@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api.js'
-import { addBet, exportBets, importBets, loadBets, removeBet, syncBets } from '../lib/bets.js'
+import { addBets, exportBets, importBets, loadBets, removeBet, removeBets, syncBets } from '../lib/bets.js'
 import { clearSession, extrairToken, getSession, logout, requestLink, verifyToken } from '../lib/auth.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
 import { BallRow } from '../components/Ball.jsx'
@@ -25,6 +25,76 @@ const FAIXA_STYLE = {
 }
 
 const ORIGEM_LABEL = { manual: 'Meu jogo (manual)', app: 'Jogo do app' }
+
+const reais = (v) => `R$ ${num(v, 2)}`
+
+// Combinações: quantas apostas simples cabem numa aposta de k dezenas.
+function comb(n, k) {
+  if (k < 0 || k > n) return 0
+  let r = 1
+  for (let i = 1; i <= k; i++) r = (r * (n - k + i)) / i
+  return Math.round(r)
+}
+
+// Lê jogos colados como texto, um por linha. Aceita qualquer separador
+// ("01 02 03", "1,2,3", "01-02-03") e um rótulo no começo ("Jogo 1: …",
+// "A) …"), que é o formato do comprovante de bolão da lotérica.
+function lerJogos(texto, cfg) {
+  const jogos = []
+  const erros = []
+  const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  linhas.forEach((linha, i) => {
+    const semRotulo = linha.replace(/^\s*[a-zA-ZÀ-ú]+\.?\s*\d*\s*[:)\-–]\s*/, '')
+    const dz = (semRotulo.match(/\d+/g) || []).map(Number)
+    const n = i + 1
+    if (dz.length < cfg.escolher || dz.length > cfg.maxEscolher) {
+      erros.push(`linha ${n}: ${dz.length} dezena(s) — a ${cfg.nome} aceita de ${cfg.escolher} a ${cfg.maxEscolher}`)
+    } else if (new Set(dz).size !== dz.length) {
+      erros.push(`linha ${n}: dezena repetida`)
+    } else if (dz.some((d) => d < cfg.min || d > cfg.max)) {
+      erros.push(`linha ${n}: dezena fora de ${cfg.min} a ${cfg.max}`)
+    } else {
+      jogos.push([...dz].sort((a, b) => a - b))
+    }
+  })
+  return { jogos, erros }
+}
+
+// "1 sena + 6 quinas" — os prêmios que uma aposta (ou um bolão inteiro) leva.
+function premiosTexto(premios) {
+  return premios
+    .map((p) => {
+      // Lotofácil: "3× 13 acertos"; Mega: "6 quinas"
+      if (/^\d/.test(p.faixa)) return `${p.quantidade}× ${p.faixa}`
+      return `${p.quantidade} ${p.quantidade > 1 ? `${p.faixa}s` : p.faixa}`
+    })
+    .join(' + ')
+}
+
+// Jogos de bolão de um concurso, agrupados pelo nome, na ordem em que entraram.
+function boloesDe(grupo) {
+  const por = new Map()
+  for (const b of [...grupo].sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em)))) {
+    if (b.origem !== 'bolao') continue
+    if (!por.has(b.bolao)) por.set(b.bolao, [])
+    por.get(b.bolao).push(b)
+  }
+  return [...por.entries()]
+}
+
+// Soma os prêmios de vários jogos por faixa (maior faixa primeiro).
+function somarPremios(checks) {
+  const por = new Map()
+  for (const c of checks) {
+    for (const p of c?.premios ?? []) {
+      const atual = por.get(p.acertos) ?? { ...p, quantidade: 0, valor: p.valor != null ? 0 : undefined }
+      atual.quantidade += p.quantidade
+      if (p.valor != null) atual.valor += p.valor
+      por.set(p.acertos, atual)
+    }
+  }
+  return [...por.values()].sort((a, b) => b.acertos - a.acertos)
+}
 
 const num = (n, d = 2) =>
   n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -330,8 +400,10 @@ function AcertosBadge({ check }) {
   )
 }
 
-function BetItem({ bet, check, onRemove }) {
+function BetItem({ bet, check, onRemove, cfg }) {
   const matched = check?.encontrado ? new Set(check.resultado) : undefined
+  const multipla = bet.dezenas.length > cfg.escolher
+  const premios = check?.encontrado ? check.premios ?? [] : []
   return (
     <div className="border border-zinc-200 rounded-lg p-2.5">
       <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
@@ -363,10 +435,97 @@ function BetItem({ bet, check, onRemove }) {
         </button>
       </div>
       <BallRow dezenas={bet.dezenas} size="sm" highlightSet={matched} />
+      {multipla && (
+        <p className="text-[11px] text-zinc-500 mt-1.5">
+          {bet.dezenas.length} dezenas = {comb(bet.dezenas.length, cfg.escolher).toLocaleString('pt-BR')}{' '}
+          apostas simples ({reais(comb(bet.dezenas.length, cfg.escolher) * cfg.preco)})
+        </p>
+      )}
+      {multipla && premios.length > 0 && (
+        <p className="text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 mt-1.5">
+          Prêmios desta aposta: {premiosTexto(premios)}
+          {check.premio_fixo > 0 && <> · {reais(check.premio_fixo)} em faixa de valor fixo</>}
+        </p>
+      )}
       {check?.encontrado && <Avaliacao av={check.avaliacao} faixa={check.faixa} />}
       <p className="text-[10px] text-zinc-400 mt-1.5">
         registrado em {new Date(bet.criado_em).toLocaleDateString('pt-BR')}
       </p>
+    </div>
+  )
+}
+
+/* Um bolão dentro do concurso: os jogos dele, o custo das apostas e o que o
+   bolão inteiro ganhou — e a sua parte, pelas cotas. */
+function BolaoBloco({ nome, jogos, checks, cfg, onRemove, onRemoveBolao }) {
+  const ref = jogos[jogos.length - 1] // cotas: as do jogo salvo por último
+  const { cotas, cotas_total: total } = ref
+  const fracao = cotas && total ? cotas / total : null
+  const simples = jogos.reduce((s, b) => s + comb(b.dezenas.length, cfg.escolher), 0)
+  const conferidos = jogos.map((b) => checks[b.id]).filter((c) => c?.encontrado)
+  const premios = somarPremios(conferidos)
+  const fixo = premios.reduce((s, p) => s + (p.valor ?? 0), 0)
+  const rateio = premios.some((p) => p.valor == null)
+  return (
+    <div className="border border-emerald-200 rounded-lg p-3 bg-emerald-50/40">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <p className="text-sm font-semibold text-emerald-900">Bolão: {nome}</p>
+          <p className="text-[11px] text-zinc-600 mt-0.5">
+            {jogos.length} jogo(s) · {simples.toLocaleString('pt-BR')} aposta(s) simples ·{' '}
+            {reais(simples * cfg.preco)} em apostas (sem a tarifa da lotérica)
+            {fracao != null && (
+              <>
+                {' '}
+                · suas cotas: <strong>{cotas} de {total}</strong> ({num(fracao * 100, fracao * 100 < 10 ? 1 : 0)}%)
+              </>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={() => onRemoveBolao(jogos.map((b) => b.id), nome)}
+          className="text-[11px] text-zinc-400 hover:text-red-600 whitespace-nowrap"
+        >
+          excluir bolão
+        </button>
+      </div>
+      {conferidos.length > 0 && (
+        <p
+          className={`text-xs rounded px-2 py-1.5 mb-2 border ${
+            premios.length
+              ? 'bg-emerald-100 border-emerald-300 text-emerald-900 font-medium'
+              : 'bg-white border-zinc-200 text-zinc-600'
+          }`}
+        >
+          {premios.length ? (
+            <>
+              O bolão ganhou: {premiosTexto(premios)}.
+              {fixo > 0 && (
+                <>
+                  {' '}
+                  Faixas de valor fixo: {reais(fixo)}
+                  {fracao != null && <> — a sua parte é {reais(fixo * fracao)}</>}.
+                </>
+              )}
+              {rateio && (
+                <>
+                  {' '}
+                  O valor de {premios.filter((p) => p.valor == null).map((p) => p.faixa).join(', ')}{' '}
+                  depende do rateio do concurso (veja no resultado da Caixa)
+                  {fracao != null && <>; você leva {cotas}/{total} do que o bolão receber</>}.
+                </>
+              )}
+            </>
+          ) : (
+            'Nenhum jogo do bolão chegou a uma faixa premiada.'
+          )}
+        </p>
+      )}
+      <div className="grid sm:grid-cols-2 gap-2">
+        {jogos.map((b) => (
+          <BetItem key={b.id} bet={b} check={checks[b.id]} onRemove={onRemove} cfg={cfg} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -379,6 +538,12 @@ export default function MeusJogos() {
   const [regua, setRegua] = useState(null) // distribuição de acertos da aposta simples
   const [concurso, setConcurso] = useState('')
   const [dezenas, setDezenas] = useState([])
+  // Formulário: 'manual' = jogo seu; 'bolao' = jogos de um bolão, com cotas.
+  const [tipo, setTipo] = useState('manual')
+  const [bolaoNome, setBolaoNome] = useState('')
+  const [cotas, setCotas] = useState('')
+  const [cotasTotal, setCotasTotal] = useState('')
+  const [colado, setColado] = useState('')
   const [message, setMessage] = useState(null)
   const [session, setSession] = useState(getSession())
   const [emailInput, setEmailInput] = useState('')
@@ -458,18 +623,76 @@ export default function MeusJogos() {
       .catch(() => {})
   }, [refresh])
 
-  function salvarManual() {
-    if (dezenas.length !== cfg.escolher || !concurso) return
-    addBet({ loteria: code, concurso, origem: 'manual', dezenas })
-    setDezenas([])
-    setMessage({ type: 'ok', text: `Jogo manual salvo no concurso ${concurso}.` })
+  // Bolões já salvos no concurso do formulário: sugestões de nome, e as
+  // cotas de um bolão existente vêm preenchidas ao escolher o nome dele.
+  const boloesDoConcurso = useMemo(() => {
+    const por = new Map()
+    for (const b of bets) {
+      if (b.origem === 'bolao' && b.concurso === Number(concurso)) por.set(b.bolao, b)
+    }
+    return por
+  }, [bets, concurso])
+  const bolaoExistente = boloesDoConcurso.get(bolaoNome.trim())
+
+  function escolherBolao(nome) {
+    setBolaoNome(nome)
+    const b = boloesDoConcurso.get(nome.trim())
+    if (b) {
+      setCotas(b.cotas ?? '')
+      setCotasTotal(b.cotas_total ?? '')
+    }
+  }
+
+  const cotasInvalidas = Boolean(cotas && cotasTotal && Number(cotas) > Number(cotasTotal))
+  const formOk = Boolean(concurso) && (tipo === 'manual' || (bolaoNome.trim() && !cotasInvalidas))
+
+  function salvarJogos(lista) {
+    if (!formOk || lista.length === 0) return
+    const extra =
+      tipo === 'bolao'
+        ? { bolao: bolaoNome.trim(), cotas: cotas || null, cotas_total: cotasTotal || null }
+        : {}
+    addBets(
+      code,
+      lista.map((dz) => ({ concurso, origem: tipo, dezenas: dz, ...extra })),
+    )
+    const qtd = lista.length === 1 ? 'Jogo salvo' : `${lista.length} jogos salvos`
+    setMessage({
+      type: 'ok',
+      text:
+        tipo === 'bolao'
+          ? `${qtd} no bolão “${bolaoNome.trim()}”, concurso ${concurso}.`
+          : `${qtd} no concurso ${concurso}.`,
+    })
     refresh()
+  }
+
+  function salvarVolante() {
+    if (dezenas.length < cfg.escolher) return
+    salvarJogos([dezenas])
+    setDezenas([])
+  }
+
+  const lidos = useMemo(() => lerJogos(colado, cfg), [colado, cfg])
+
+  function salvarColados() {
+    if (lidos.erros.length || lidos.jogos.length === 0) return
+    salvarJogos(lidos.jogos)
+    setColado('')
   }
 
   function remover(id) {
     removeBet(code, id)
     refresh()
   }
+
+  function removerBolao(ids, nome) {
+    if (!window.confirm(`Excluir o bolão “${nome}” e os ${ids.length} jogo(s) dele?`)) return
+    removeBets(code, ids)
+    refresh()
+  }
+
+  const simplesVolante = comb(dezenas.length, cfg.escolher)
 
   async function importar(file) {
     if (!file) return
@@ -727,12 +950,94 @@ export default function MeusJogos() {
       )}
 
       <Card
-        title="Adicionar meu jogo (manual)"
-        subtitle={`Marque as ${cfg.escolher} dezenas que VOCÊ escolheu (de qualquer fonte) e vincule ao concurso`}
+        title="Adicionar jogo para conferir"
+        subtitle={`Seu jogo ou os jogos de um bolão — simples ou múltipla, de ${cfg.escolher} a ${cfg.maxEscolher} dezenas por jogo`}
       >
+        <div className="flex flex-wrap items-center gap-2 mb-3" role="tablist">
+          {[
+            ['manual', 'Meu jogo'],
+            ['bolao', 'Bolão'],
+          ].map(([v, rot]) => (
+            <button
+              key={v}
+              role="tab"
+              aria-selected={tipo === v}
+              onClick={() => setTipo(v)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
+                tipo === v
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
+              }`}
+            >
+              {rot}
+            </button>
+          ))}
+          <span className="text-[11px] text-zinc-500">
+            {tipo === 'manual'
+              ? 'dezenas que VOCÊ escolheu (entram no comparativo você vs. app)'
+              : 'jogos de um bolão — ficam agrupados, com as suas cotas'}
+          </span>
+        </div>
+
+        {tipo === 'bolao' && (
+          <div className="grid grid-cols-2 sm:grid-cols-[1fr_auto_auto] gap-2 mb-3 items-end">
+            <label className="text-sm col-span-2 sm:col-span-1">
+              <span className="text-zinc-600">Nome do bolão</span>
+              <input
+                type="text"
+                list="boloes-do-concurso"
+                maxLength={60}
+                value={bolaoNome}
+                onChange={(e) => escolherBolao(e.target.value)}
+                placeholder="ex.: Bolão do trabalho"
+                className="mt-1 w-full border border-zinc-300 rounded-lg px-2 py-1.5"
+              />
+              <datalist id="boloes-do-concurso">
+                {[...boloesDoConcurso.keys()].map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+            </label>
+            <label className="text-sm">
+              <span className="text-zinc-600">Suas cotas</span>
+              <input
+                type="number"
+                min="1"
+                value={cotas}
+                onChange={(e) => setCotas(e.target.value)}
+                placeholder="1"
+                className="mt-1 w-full sm:w-24 border border-zinc-300 rounded-lg px-2 py-1.5"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="text-zinc-600">Total de cotas</span>
+              <input
+                type="number"
+                min="1"
+                value={cotasTotal}
+                onChange={(e) => setCotasTotal(e.target.value)}
+                placeholder="10"
+                className="mt-1 w-full sm:w-24 border border-zinc-300 rounded-lg px-2 py-1.5"
+              />
+            </label>
+            <p className="text-[11px] text-zinc-500 col-span-2 sm:col-span-3">
+              {cotasInvalidas ? (
+                <span className="text-red-600">Suas cotas não podem passar do total.</span>
+              ) : bolaoExistente ? (
+                <>Este bolão já existe no concurso {concurso}: os jogos novos entram nele.</>
+              ) : (
+                <>
+                  As cotas são opcionais — com elas o app calcula a sua parte do prêmio. Salve
+                  quantos jogos o bolão tiver: com o mesmo nome, todos ficam juntos.
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row gap-4">
           <div>
-            <Volante selected={dezenas} onChange={setDezenas} max={cfg.escolher} />
+            <Volante selected={dezenas} onChange={setDezenas} max={cfg.maxEscolher} />
           </div>
           <div className="space-y-3 min-w-48">
             <label className="text-sm block">
@@ -750,7 +1055,8 @@ export default function MeusJogos() {
             </label>
             <div className="text-sm">
               <span className="text-zinc-600">
-                Selecionadas ({dezenas.length}/{cfg.escolher}):
+                Selecionadas ({dezenas.length}/{cfg.escolher}
+                {cfg.maxEscolher > cfg.escolher ? `–${cfg.maxEscolher}` : ''}):
               </span>
               <div className="mt-1 min-h-8">
                 {dezenas.length > 0 ? (
@@ -759,16 +1065,59 @@ export default function MeusJogos() {
                   <span className="text-xs text-zinc-400">toque nos números do volante</span>
                 )}
               </div>
+              {dezenas.length > cfg.escolher && (
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Aposta múltipla: {simplesVolante.toLocaleString('pt-BR')} apostas simples ·{' '}
+                  {reais(simplesVolante * cfg.preco)}
+                </p>
+              )}
             </div>
             <button
-              onClick={salvarManual}
-              disabled={dezenas.length !== cfg.escolher || !concurso}
+              onClick={salvarVolante}
+              disabled={dezenas.length < cfg.escolher || !formOk}
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
             >
-              Salvar meu jogo
+              {tipo === 'bolao' ? 'Adicionar ao bolão' : 'Salvar meu jogo'}
             </button>
           </div>
         </div>
+
+        <details className="mt-4 border-t border-zinc-100 pt-3" open={tipo === 'bolao' || undefined}>
+          <summary className="text-sm font-medium text-zinc-700 cursor-pointer">
+            Colar vários jogos de uma vez
+          </summary>
+          <p className="text-[11px] text-zinc-500 mt-1.5">
+            Um jogo por linha, com {cfg.escolher} a {cfg.maxEscolher} dezenas. Vale copiar do
+            comprovante do bolão: “Jogo 1: 04 11 23 35 42 58” ou “4, 11, 23, 35, 42, 58”.
+          </p>
+          <textarea
+            value={colado}
+            onChange={(e) => setColado(e.target.value)}
+            rows={4}
+            placeholder={
+              cfg.escolher === 6 ? '04 11 23 35 42 58\n02 09 17 30 44 51 60' : 'uma linha por jogo'
+            }
+            className="mt-2 w-full border border-zinc-300 rounded-lg px-2 py-1.5 text-sm font-mono"
+          />
+          {lidos.erros.length > 0 && (
+            <ul className="text-[11px] text-red-600 mt-1 space-y-0.5">
+              {lidos.erros.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
+          <button
+            onClick={salvarColados}
+            disabled={!formOk || lidos.erros.length > 0 || lidos.jogos.length === 0}
+            className="mt-2 px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50"
+          >
+            Salvar {lidos.jogos.length || ''} jogo(s)
+            {tipo === 'bolao' ? ' no bolão' : ''}
+          </button>
+          {tipo === 'bolao' && !bolaoNome.trim() && (
+            <span className="text-[11px] text-zinc-500 ml-2">dê um nome ao bolão acima</span>
+          )}
+        </details>
       </Card>
 
       {regua && (() => {
@@ -898,7 +1247,7 @@ export default function MeusJogos() {
       {grupos.length === 0 ? (
         <Card>
           <p className="text-sm text-zinc-500">
-            Nenhum jogo salvo ainda. Adicione seu jogo manual acima e gere o jogo do app em{' '}
+            Nenhum jogo salvo ainda. Adicione seu jogo ou bolão acima e gere o jogo do app em{' '}
             <Link to={`/${code}/gerar`} className="text-emerald-700 underline">
               Gerar jogos
             </Link>
@@ -924,6 +1273,7 @@ export default function MeusJogos() {
                   <BallRow dezenas={anyCheck.resultado} size="sm" />
                 </div>
               )}
+              {grupo.some((b) => b.origem !== 'bolao') && (
               <div className="grid sm:grid-cols-2 gap-3">
                 {['manual', 'app'].map((origem) => {
                   const doGrupo = grupo.filter((b) => b.origem === origem)
@@ -941,7 +1291,7 @@ export default function MeusJogos() {
                       ) : (
                         <div className="space-y-2">
                           {doGrupo.map((b) => (
-                            <BetItem key={b.id} bet={b} check={checks[b.id]} onRemove={remover} />
+                            <BetItem key={b.id} bet={b} check={checks[b.id]} onRemove={remover} cfg={cfg} />
                           ))}
                         </div>
                       )}
@@ -949,6 +1299,19 @@ export default function MeusJogos() {
                   )
                 })}
               </div>
+              )}
+              {boloesDe(grupo).map(([nome, jogos]) => (
+                <div key={nome} className="mt-3">
+                  <BolaoBloco
+                    nome={nome}
+                    jogos={jogos}
+                    checks={checks}
+                    cfg={cfg}
+                    onRemove={remover}
+                    onRemoveBolao={removerBolao}
+                  />
+                </div>
+              ))}
             </Card>
           )
         })

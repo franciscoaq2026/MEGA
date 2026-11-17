@@ -52,6 +52,7 @@ nas duas dimensões que importam — 1 em 11.372.635 no prêmio principal e apen
 | **Dezenas por jogo** | Tamanho de **cada** aposta (6–20) |
 | **Jogo manual** | Aposta digitada pelo usuário (origem `manual`) |
 | **Jogo do app** | Aposta gerada por alguma ferramenta do site (origem `app`, com o nome da estratégia) |
+| **Bolão** | Jogos de um bolão (origem `bolao`), agrupados pelo nome dentro do concurso, com as cotas do usuário (`cotas` de `cotas_total`). Ficam fora do comparativo você × app |
 | **Fechamento** | Conjunto de vários jogos derivados de 7–20 dezenas escolhidas (ver §6.3) |
 
 ### Esclarecimento importante (fonte comum de confusão)
@@ -214,10 +215,11 @@ Motivos: privacidade, zero dependência de auth, e imunidade a redeploys.
 Schema de cada aposta:
 
 ```json
-{ "id": "uuid", "concurso": 2995, "origem": "manual" | "app",
+{ "id": "uuid", "concurso": 2995, "origem": "manual" | "app" | "bolao",
   "estrategia": null | "aleatorio" | "frequencia" | "atrasados" | "balanceado"
               | "avancado" | "fechamento-completa" | "fechamento-reduzida",
-  "dezenas": [4, 17, 23, 38, 45, 59], "criado_em": "ISO-8601" }
+  "dezenas": [4, 17, 23, 38, 45, 59], "criado_em": "ISO-8601",
+  "bolao": null | "Bolão do trabalho", "cotas": null | 2, "cotas_total": null | 10 }
 ```
 
 A conferência é **stateless**: o frontend manda as apostas para `/api/check` e
@@ -282,8 +284,18 @@ indicado.
    rotulado: mede tipicidade, **não** chance de ganhar.
 
 ### 4.6 Meus jogos
-- Volante para digitar o **jogo manual** (6 dezenas) e vincular a um concurso
-  (default = próximo a fechar).
+- Volante para digitar o **jogo manual** ou os jogos de um **bolão** — simples
+  ou múltipla (Mega 6–20, Lotofácil 15–20 dezenas) — e vincular a um concurso
+  (default = próximo a fechar; vale qualquer número, ex.: a Mega da Virada).
+- **Colar vários jogos** de uma vez, um por linha (aceita o formato do
+  comprovante: "Jogo 1: 04 11 23 35 42 58").
+- **Bolão**: nome (único no concurso) e cotas opcionais; os jogos aparecem
+  agrupados, com custo das apostas, prêmios somados do bolão e a sua parte
+  pelas cotas (em R$ nas faixas de valor fixo da Lotofácil; nas de rateio, a
+  fração).
+- **Aposta múltipla**: a conferência conta os prêmios de todas as simples
+  contidas nela — C(acertos, t)·C(k − acertos, escolher − t) na faixa de t
+  acertos (7 dezenas com 6 acertos = 1 sena + 6 quinas).
 - Lista **agrupada por concurso**, com duas colunas: *Meu jogo (manual)* ×
   *Jogo do app* — o cenário "2 geradas + 1 manual no mesmo concurso" aparece
   como um card do concurso com 1 aposta na coluna manual e 2 na coluna app.

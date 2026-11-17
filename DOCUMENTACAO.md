@@ -325,6 +325,7 @@ removem o `/api` ao rotear). Erro padrão FastAPI: `{"detail": "mensagem"}`.
 | `POST /api/wheel` | fechamento: `{dezenas[7–20], tipo: completa\|reduzida, garantia: 4\|5}` |
 | `GET /api/acertos-esperados?dezenas` | régua: distribuição de acertos de uma aposta de N dezenas |
 | `GET /api/odds/carteira?jogos&espalhar` | chance acumulada de N bilhetes; `espalhar` muda "levar algo" |
+| `GET /api/odds/orcamento?valor&pessoas` | comparador de mesmo orçamento: jogos espalhados × soltos × aposta com mais dezenas × bolão |
 | `GET /api/recomendacao?jogos` | botão "Qual estratégia usar?": estratégia pelo teste concurso a concurso + Espalhar, custo e chance (§6.5.3) |
 | `POST /api/check` | conferência: `{apostas:[{concurso, dezenas}]}` → acertos, faixa e `avaliacao` |
 | `POST /api/backtest?ultimos&jogos&espalhar` | simulação honesta das 4 estratégias: `ultimos` concursos (a tela usa 50/100/200), `jogos` 1–5 por concurso |
@@ -489,6 +490,36 @@ opção é "melhor": o quadro do Espalhar mostra, para a quantidade digitada,
 em quantos concursos de cada 100 ficaria sem prêmio com e sem Espalhar
 ("tanto faz" abaixo de 1 de diferença — sempre na Mega; na Lotofácil o efeito
 máximo é com ~10 jogos: 33 contra 26).
+
+### 6.5.3.1 Comparador de mesmo orçamento (`generator.comparar_orcamento`)
+Primeiro quadro da aba **Probabilidades**: o usuário digita quanto quer gastar
+(e quantas pessoas teria um bolão) e vê o **mesmo dinheiro** jogado de quatro
+jeitos, com a chance de ganhar algum prêmio e a do prêmio principal de cada
+um. A explicação de cada número fica sempre aberta na tela ("Como funciona");
+os textos vêm do backend (`como`), junto com o método usado.
+
+Passo a passo da conta:
+
+1. `n = valor // preço` — quantas apostas simples o dinheiro compra (o troco
+   vira `sobra`).
+2. **Jogos simples espalhados**: `odds_carteira(n, espalhar=True)` (§6.5.3).
+3. **Jogos simples ao acaso**: `1 − (1 − p)^n`, p = chance de um jogo simples.
+4. **Uma aposta com mais dezenas**: o maior k com `C(k, escolher) ≤ n`; chance
+   exata pela hipergeométrica de `odds(k)` (§6.4).
+5. **Bolão de P pessoas**: o grupo compra `P · n` jogos espalhados; a chance é
+   a do grupo e cada prêmio é dividido por P (o custo mostrado é a cota).
+6. **Prêmio principal**: `combinações cobertas / C(total, sorteadas)` — igual
+   para todo formato de mesmo custo.
+
+`melhor_ganhar_algo` aponta, entre os jeitos de jogar sozinho, o de maior
+chance de ganhar algo (o bolão fica de fora: é outro volume de dinheiro).
+O retorno médio por real é idêntico em todas as linhas; o que muda é a
+frequência dos prêmios. Referência (testada):
+
+| Gasto | Aposta múltipla | Ganhar algo | Jogos simples espalhados | Ganhar algo |
+| --- | --- | --- | --- | --- |
+| Lotofácil R$ 56 | 16 dezenas | 22,16% | 16 jogos | 89,29% |
+| Mega R$ 42 | 7 dezenas | 1 em 1.014 | 7 jogos | 1 em 328 |
 
 ### 6.5.3 Recomendação de estratégia (`stats.sinais_concurso_a_concurso`, `generator.recomendacao`)
 O botão **"Qual estratégia usar?"** (Gerar jogos) mostra, para a quantidade de

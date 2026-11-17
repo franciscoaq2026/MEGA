@@ -1,6 +1,8 @@
 import random
 from itertools import combinations
 
+import pytest
+
 from app import db, generator, lotteries
 
 DRAWS = [
@@ -494,3 +496,43 @@ def test_gerar_com_historico_pronto_da_o_mesmo_lote():
                     draws, estrategia, 4, cfg["escolher"], rng=random.Random(5), historico=historico, **kw
                 )
                 assert sozinho == pronto, (loteria, estrategia, anti_rateio)
+
+
+def test_comparar_orcamento_lotofacil_mesmo_dinheiro():
+    """R$ 56 na Lotofácil: 16 jogos simples ou 1 aposta de 16 dezenas. O
+    prêmio principal é idêntico; ganhar algo, não."""
+    r = generator.comparar_orcamento(56, "lofa")
+    op = {o["chave"]: o for o in r["opcoes"]}
+    assert r["jogos_simples"] == 16
+    assert op["multipla"]["dezenas"] == 16 and op["multipla"]["custo"] == 56.0
+    # mesmas 16 combinações cobertas -> mesma chance de 15 acertos
+    assert op["multipla"]["principal"]["prob"] == op["espalhados"]["principal"]["prob"]
+    assert op["espalhados"]["principal"]["combinacoes"] == 16
+    assert op["multipla"]["qualquer"]["pct"] == 22.16
+    assert op["espalhados"]["qualquer"]["pct"] == 89.29  # tabela enumerada
+    assert op["soltos"]["qualquer"]["pct"] == 83.32      # 1-(1-p)^16
+    assert r["melhor_ganhar_algo"] == "espalhados"
+    assert r["vantagem_sobre_multipla"] == 4.0
+    # bolão: 10x os jogos, 10x a chance do prêmio principal, mesma cota
+    assert op["bolao"]["jogos"] == 160 and op["bolao"]["custo"] == 56.0
+    assert op["bolao"]["principal"]["combinacoes"] == 160
+    assert all(o["como"] for o in r["opcoes"])
+
+
+def test_comparar_orcamento_mega_e_sobra():
+    r = generator.comparar_orcamento(45, "mega", pessoas=1)
+    op = {o["chave"]: o for o in r["opcoes"]}
+    assert r["jogos_simples"] == 7
+    assert "bolao" not in op
+    assert op["espalhados"]["sobra"] == 3.0
+    assert op["multipla"]["dezenas"] == 7
+    # 7 jogos espalhados: 7p exato; aposta de 7 dezenas: ~1 em 1.014
+    assert abs(op["espalhados"]["qualquer"]["prob"] - 7 * generator._p_premiar(lotteries.get_loteria("mega"))) < 1e-12
+    assert round(op["multipla"]["qualquer"]["one_in"]) == 1014
+
+
+def test_comparar_orcamento_valor_pequeno():
+    um = generator.comparar_orcamento(3.5, "lofa", pessoas=1)
+    assert [o["chave"] for o in um["opcoes"]] == ["espalhados"]
+    with pytest.raises(ValueError):
+        generator.comparar_orcamento(3, "lofa")

@@ -939,6 +939,165 @@ def odds(k: int, preco_simples: float | None = None, loteria: str = "mega") -> d
     }
 
 
+def _chance(p: float) -> dict:
+    return {"prob": p, "one_in": round(1 / p, 2) if p else None, "pct": round(100 * p, 2)}
+
+
+def _pct_br(p: float) -> str:
+    """Percentual por extenso, com vírgula e casas que não zeram a Mega (0,044%)."""
+    v = 100 * p
+    return f"{v:.{1 if v >= 10 else 2 if v >= 1 else 3}f}%".replace(".", ",")
+
+
+_COMO_MEDIDO = {
+    "exato": "conta exata: os jogos não conseguem premiar no mesmo sorteio, então as chances se somam",
+    "enumerado": "medido conferindo um a um todos os sorteios possíveis",
+    "combinatorio": "conta exata das combinações, descontando os sorteios em que dois jogos premiam juntos",
+    "simulado": "medido em 60 mil sorteios simulados (margem de ±0,4 ponto)",
+    "independente": "conta de jogos soltos, 1 − (1 − p)^N: com tantos jogos não dá para medir o espalhamento, e esta conta nunca exagera",
+}
+
+
+def comparar_orcamento(orcamento: float, loteria: str = "mega", pessoas: int = 10) -> dict:
+    """Comparador de mesmo orçamento: o MESMO dinheiro jogado de jeitos
+    diferentes, com a chance de cada um lado a lado.
+
+    Passo a passo (é o que a tela mostra em "Como funciona"):
+
+    1. `n = orcamento // preço` = quantas apostas simples o dinheiro compra.
+    2. Jogos simples ESPALHADOS: n bilhetes repetindo o mínimo de dezenas
+       entre si. Chance de ganhar algo por `odds_carteira(n, espalhar=True)`.
+    3. Jogos simples SOLTOS: n bilhetes ao acaso, `1 − (1 − p)^n`.
+    4. UMA aposta com mais dezenas: o maior k com `C(k, escolher) ≤ n`
+       (ela custa C(k, escolher) apostas simples). Chance pela hipergeométrica
+       de `odds(k)`; o que não couber em k dezenas aparece como `sobra`.
+    5. BOLÃO de `pessoas` cotas iguais: o grupo compra `pessoas · n` jogos
+       espalhados; a chance é a do grupo, e cada prêmio é dividido por
+       `pessoas`.
+
+    O prêmio principal não escolhe lado: cada combinação simples coberta vale
+    1 em C(total, sorteadas), então a chance é `combinações / C(total,
+    sorteadas)` em qualquer formato. O retorno médio por real também é igual
+    em todos — o que muda é a FREQUÊNCIA com que algum prêmio vem."""
+    cfg = lotteries.get_loteria(loteria)
+    preco, escolher = cfg["preco"], cfg["escolher"]
+    n = int(orcamento / preco + 1e-9)
+    if n < 1:
+        raise ValueError(
+            f"com esse valor não dá para fazer uma aposta simples da {cfg['nome']} (R$ {preco:.2f})"
+        )
+    universo = comb(cfg["total"], cfg["sorteadas"])
+    p_uma = _p_premiar(cfg)
+
+    def principal(combos: int) -> dict:
+        p = min(1.0, combos / universo)
+        return {"prob": p, "one_in": _um_em(p), "combinacoes": combos}
+
+    def simples(jogos: int, espalhar: bool) -> tuple[dict, str]:
+        cart = odds_carteira(jogos, cfg["code"], espalhar=espalhar)
+        return cart["qualquer"], cart["metodo"]
+
+    opcoes = []
+
+    q, metodo = simples(n, True)
+    opcoes.append({
+        "chave": "espalhados",
+        "nome": f"{n} jogo{'s' if n > 1 else ''} simples espalhado{'s' if n > 1 else ''}",
+        "jogos": n, "dezenas": escolher, "custo": round(n * preco, 2),
+        "sobra": round(orcamento - n * preco, 2),
+        "qualquer": q, "principal": principal(n), "metodo": metodo,
+        "como": (
+            f"{n} bilhetes de {escolher} dezenas repetindo o mínimo possível entre si "
+            f"(o botão Espalhar de Gerar jogos). Ganhar algo: {_COMO_MEDIDO[metodo]}."
+            if n > 1 else
+            f"Um bilhete só: conta exata (hipergeométrica) de pelo menos "
+            f"{min(cfg['faixas'])} das {cfg['sorteadas']} sorteadas caírem nas suas {escolher}."
+        ),
+        "quando_acerta": "Costuma vir um prêmio por vez, em mais concursos.",
+    })
+
+    if n > 1:
+        q, metodo = simples(n, False)
+        opcoes.append({
+            "chave": "soltos",
+            "nome": f"{n} jogos simples ao acaso (sem espalhar)",
+            "jogos": n, "dezenas": escolher, "custo": round(n * preco, 2),
+            "sobra": round(orcamento - n * preco, 2),
+            "qualquer": q, "principal": principal(n), "metodo": metodo,
+            "como": (
+                f"{n} bilhetes sorteados sem olhar um para o outro. Ganhar algo: "
+                f"1 − (1 − p)^{n}, com p = {_pct_br(p_uma)} (chance de um jogo simples premiar)."
+            ),
+            "quando_acerta": "Parecido com os espalhados, um pouco menos regular.",
+        })
+
+    k = escolher
+    while k < cfg["max_escolher"] and comb(k + 1, escolher) <= n:
+        k += 1
+    if k > escolher:
+        o = odds(k, preco, cfg["code"])
+        combos = o["combos_simples"]
+        opcoes.append({
+            "chave": "multipla",
+            "nome": f"1 aposta de {k} dezenas",
+            "jogos": 1, "dezenas": k, "custo": o["custo_estimado"],
+            "sobra": round(orcamento - o["custo_estimado"], 2),
+            "qualquer": o["qualquer"], "principal": principal(combos), "metodo": "exato",
+            "como": (
+                f"Marcar {k} dezenas num volante só equivale a C({k},{escolher}) = {combos} apostas "
+                f"simples — e custa as {combos}. Ganhar algo: conta exata (hipergeométrica) de "
+                f"pelo menos {min(cfg['faixas'])} das {cfg['sorteadas']} sorteadas caírem nas suas {k}."
+            ),
+            "quando_acerta": (
+                "Os jogos de dentro são quase iguais entre si: ou nenhum premia, "
+                "ou vários premiam juntos no mesmo concurso."
+            ),
+        })
+
+    if pessoas > 1:
+        total_jogos = n * pessoas
+        q, metodo = simples(total_jogos, True)
+        opcoes.append({
+            "chave": "bolao",
+            "nome": f"Bolão de {pessoas} pessoas ({total_jogos} jogos espalhados)",
+            "jogos": total_jogos, "dezenas": escolher,
+            "custo": round(n * preco, 2),  # a SUA parte
+            "custo_grupo": round(total_jogos * preco, 2),
+            "sobra": round(orcamento - n * preco, 2),
+            "pessoas": pessoas,
+            "qualquer": q, "principal": principal(total_jogos), "metodo": metodo,
+            "como": (
+                f"{pessoas} pessoas pondo o mesmo valor compram {pessoas} × {n} = {total_jogos} jogos. "
+                f"A chance é a do grupo ({_COMO_MEDIDO[metodo]}), e todo prêmio é dividido por {pessoas}."
+            ),
+            "quando_acerta": f"Você recebe 1/{pessoas} de cada prêmio do grupo.",
+        })
+
+    sozinho = [o for o in opcoes if o["chave"] != "bolao"]
+    melhor = max(sozinho, key=lambda o: o["qualquer"]["prob"])
+    multipla = next((o for o in opcoes if o["chave"] == "multipla"), None)
+    return {
+        "loteria": cfg["code"],
+        "nome": cfg["nome"],
+        "orcamento": round(orcamento, 2),
+        "preco": preco,
+        "jogos_simples": n,
+        "menor_premio": min(cfg["faixas"]),
+        "premio_principal": cfg["faixas"][lotteries.faixa_maxima(cfg)],
+        "p_um_jogo": _chance(p_uma),
+        "universo": universo,
+        "opcoes": opcoes,
+        # Entre os jeitos de jogar sozinho, o de maior chance de ganhar algo.
+        "melhor_ganhar_algo": melhor["chave"],
+        # Quantas vezes os espalhados ganham "algo" mais que a aposta múltipla.
+        "vantagem_sobre_multipla": (
+            round(opcoes[0]["qualquer"]["prob"] / multipla["qualquer"]["prob"], 1)
+            if multipla and multipla["qualquer"]["prob"] else None
+        ),
+        "retorno_pct": cfg["rateio"]["pool_pct"],
+    }
+
+
 def distribuicao_acertos(k: int, loteria: str = "mega") -> dict:
     """Distribuição do nº de acertos de UMA aposta de k dezenas.
 

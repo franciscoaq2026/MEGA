@@ -315,3 +315,13 @@ def test_recomendacao_endpoint():
         # a segunda consulta sai do teste guardado e dá o mesmo
         assert c.get("/api/recomendacao?loteria=lofa&jogos=3").json() == body
         assert c.get("/api/recomendacao?loteria=lofa&jogos=0").status_code == 422
+
+
+def test_odds_orcamento():
+    with make_client() as c:
+        r = c.get("/api/odds/orcamento", params={"valor": 56, "loteria": "lofa"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["melhor_ganhar_algo"] == "espalhados"
+        assert [o["chave"] for o in body["opcoes"]] == ["espalhados", "soltos", "multipla", "bolao"]
+        assert c.get("/api/odds/orcamento", params={"valor": 1, "loteria": "mega"}).status_code == 400

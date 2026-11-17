@@ -2,7 +2,7 @@
 
 import random
 from collections import Counter
-from math import exp, lgamma, log, log1p, sqrt
+from math import comb, exp, lgamma, log, log1p, sqrt
 from zlib import crc32
 
 from . import db, generator, lotteries
@@ -21,12 +21,47 @@ def conferir(dezenas: list[int], resultado: list[int], loteria: str = "mega") ->
     Junto vem `avaliacao`: onde esse número de acertos cai na distribuição do
     acaso. Sem essa régua não há como julgar o próprio resultado — 9 acertos
     na Lotofácil soa alto e é exatamente a média de qualquer jogo."""
-    faixas = lotteries.get_loteria(loteria)["faixas"]
+    cfg = lotteries.get_loteria(loteria)
+    faixas = cfg["faixas"]
     acertos = len(set(dezenas) & set(resultado))
     return {
         "acertos": acertos,
         "faixa": faixas.get(acertos),
         "avaliacao": generator.avaliar_acertos(acertos, len(dezenas), loteria),
+        **premios_da_aposta(len(dezenas), acertos, loteria),
+    }
+
+
+def premios_da_aposta(k: int, acertos: int, loteria: str = "mega") -> dict:
+    """Prêmios de uma aposta de `k` dezenas com `acertos` acertos.
+
+    Uma aposta múltipla vale por TODAS as apostas simples contidas nela:
+    C(k, escolher). Das simples, as que acertam exatamente `t` são as que
+    pegam `t` das dezenas sorteadas e o resto entre as não sorteadas:
+    C(acertos, t) · C(k − acertos, escolher − t). Na Mega, 7 dezenas com 6
+    acertos = 1 sena + 6 quinas; na simples a conta dá 1 prêmio na faixa.
+
+    `premios` lista as faixas pagas (maior primeiro) com a quantidade e, nas
+    faixas de valor fixo (Lotofácil 11/12/13), o valor. `premio_fixo` soma o
+    que já se sabe em R$; o resto depende do rateio do concurso."""
+    cfg = lotteries.get_loteria(loteria)
+    e = cfg["escolher"]
+    fixos = cfg.get("premios_fixos", {})
+    premios = []
+    if k >= e:
+        for t in sorted(cfg["faixas"], reverse=True):
+            qtd = comb(acertos, t) * comb(k - acertos, e - t)
+            if qtd:
+                item = {"acertos": t, "faixa": cfg["faixas"][t], "quantidade": qtd}
+                if t in fixos:
+                    item["valor_unitario"] = fixos[t]
+                    item["valor"] = round(qtd * fixos[t], 2)
+                premios.append(item)
+    return {
+        "apostas_simples": comb(k, e) if k >= e else 0,
+        "premios": premios,
+        "premio_fixo": round(sum(p.get("valor", 0) for p in premios), 2),
+        "tem_rateio": any("valor" not in p for p in premios),
     }
 
 

@@ -123,9 +123,11 @@ Todas valem para as duas loterias — o app é parametrizado por
 - **Fábrica**: filtros por indicador, termômetro de tipicidade e fechamentos
   (roda completa e reduzida, com a garantia verificada por força bruta antes
   de mostrar). Os indicadores são escolhidos por loteria — ver abaixo.
-- **Meus jogos**: registre seu jogo manual e o gerado pelo app para o mesmo
-  concurso; conferência automática (acertos + faixa) quando o resultado é
-  sincronizado; painel comparativo você × app.
+- **Meus jogos**: registre seu jogo manual, o gerado pelo app e os jogos de
+  bolões (com cotas) para o mesmo concurso — simples ou múltiplas, digitando
+  no volante ou colando vários de uma vez; conferência automática (acertos +
+  prêmios de cada faixa, inclusive os de aposta múltipla) quando o resultado
+  é sincronizado; painel comparativo você × app.
 
 ### Por que os filtros mudam entre as loterias
 

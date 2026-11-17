@@ -37,19 +37,23 @@ const ROTULOS = {
 const ORDEM = [...Object.keys(ROTULOS)]
 const SEM_ESTRATEGIA = 'app:sem-estrategia'
 const MANUAL = 'manual'
+const BOLAO = 'bolao'
 
 function chaveDe(bet) {
   if (bet.origem === 'manual') return MANUAL
+  if (bet.origem === 'bolao') return BOLAO
   return bet.estrategia || SEM_ESTRATEGIA
 }
 
 export function rotuloEstrategia(chave) {
   if (chave === MANUAL) return 'Suas escolhas (manual)'
+  if (chave === BOLAO) return 'Bolões'
   if (chave === SEM_ESTRATEGIA) return 'App (estratégia não registrada)'
   return ROTULOS[chave] ?? chave
 }
 
 function posicao(chave) {
+  if (chave === BOLAO) return ORDEM.length + 3
   if (chave === MANUAL) return ORDEM.length + 2
   if (chave === SEM_ESTRATEGIA) return ORDEM.length + 1
   const i = ORDEM.indexOf(chave)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet } from '../lib/api.js'
 import Card from '../components/Card.jsx'
+import CompararOrcamento from '../components/CompararOrcamento.jsx'
 import Help from '../components/Help.jsx'
 import { formatMoney } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
@@ -81,6 +82,9 @@ export default function Probabilidades() {
           de que não há padrão a explorar.
         </p>
       </div>
+
+      {/* 0. Comparador de mesmo orçamento */}
+      <CompararOrcamento />
 
       {/* 1. Tabela mestra */}
       <Card

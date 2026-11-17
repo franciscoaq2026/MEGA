@@ -111,7 +111,10 @@ Todas valem para as duas loterias — o app é parametrizado por
   testa concurso a concurso se as dezenas mais sorteadas (ou as atrasadas)
   continuaram saindo mais e recomenda estratégia, Espalhar, custo e chance —
   refeito a cada concurso novo.
-- **Probabilidades**: a chance exata de cada faixa para todos os tamanhos de
+- **Probabilidades**: o **comparador de mesmo orçamento** (digite quanto quer
+  gastar e veja, lado a lado, jogos simples espalhados, jogos ao acaso, uma
+  aposta com mais dezenas e bolão — com o passo a passo de cada conta na
+  tela); a chance exata de cada faixa para todos os tamanhos de
   aposta que a Caixa aceita, com custo; quanto volta pelas faixas de prêmio
   fixo; para onde vai o dinheiro apostado; e o **teste do qui-quadrado** sobre
   o histórico, com a distribuição observada de cada indicador sobreposta à

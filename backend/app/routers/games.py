@@ -186,6 +186,22 @@ def odds(
     return generator.odds(k, preco_simples, lot)
 
 
+@router.get("/odds/orcamento")
+def odds_orcamento(
+    valor: float = Query(..., gt=0, le=20000),
+    pessoas: int = Query(10, ge=1, le=100),
+    loteria: str | None = Query(default=None),
+):
+    """Comparador de mesmo orçamento: o mesmo dinheiro em jogos simples
+    espalhados, jogos soltos, uma aposta com mais dezenas e num bolão — com a
+    chance de ganhar algo e a do prêmio principal de cada um, e como cada
+    número foi calculado."""
+    try:
+        return generator.comparar_orcamento(valor, _lot(loteria), pessoas)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @router.get("/acertos-esperados")
 def acertos_esperados(
     dezenas: int = Query(0, ge=0, le=50),

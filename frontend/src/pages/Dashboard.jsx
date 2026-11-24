@@ -4,12 +4,13 @@ import { apiGet } from '../lib/api.js'
 import { BallRow } from '../components/Ball.jsx'
 import { formatDate, formatMoney } from '../lib/format.js'
 import { useLottery } from '../lib/LotteryContext.jsx'
-import { EVENTO_SORTEIOS } from '../lib/sincronizar.js'
+import { EVENTO_SORTEIOS, buscarProximoDireto } from '../lib/sincronizar.js'
 
 export default function Dashboard() {
-  const { code } = useLottery()
+  const { code, cfg } = useLottery()
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
+  const [proximoDireto, setProximoDireto] = useState(null)
 
   useEffect(() => {
     const carregar = () =>
@@ -21,6 +22,32 @@ export default function Dashboard() {
     window.addEventListener(EVENTO_SORTEIOS, carregar)
     return () => window.removeEventListener(EVENTO_SORTEIOS, carregar)
   }, [])
+
+  // O banco só tem data/prêmio do próximo concurso quando o último resultado
+  // veio da Caixa pelo navegador de alguém logado. Se faltar, busca direto
+  // (só para exibir, nada é gravado).
+  const proximoBanco = status?.proximo
+  const faltaInfo = proximoBanco && (proximoBanco.estimativa == null || !proximoBanco.data)
+  useEffect(() => {
+    if (!faltaInfo) return
+    let vivo = true
+    buscarProximoDireto(cfg, proximoBanco.concurso).then((p) => {
+      if (vivo) setProximoDireto(p)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [faltaInfo, proximoBanco?.concurso, cfg])
+
+  const proximo =
+    faltaInfo && proximoDireto
+      ? {
+          ...proximoBanco,
+          ...proximoDireto,
+          data: proximoBanco.data || proximoDireto.data,
+          estimativa: proximoBanco.estimativa ?? proximoDireto.estimativa,
+        }
+      : proximoBanco
 
   return (
     <div className="space-y-4">
@@ -66,18 +93,18 @@ export default function Dashboard() {
           </div>
           <div className="bg-white border border-zinc-200 rounded-xl p-5">
             <p className="text-sm text-zinc-500">Próximo concurso</p>
-            {status.proximo ? (
+            {proximo ? (
               <div className="mt-2 space-y-1">
                 <p className="font-semibold">
-                  {status.proximo.concurso ? `Nº ${status.proximo.concurso}` : '—'}
-                  {status.proximo.data ? ` · ${formatDate(status.proximo.data)}` : ''}
+                  {proximo.concurso ? `Nº ${proximo.concurso}` : '—'}
+                  {proximo.data ? ` · ${formatDate(proximo.data)}` : ''}
                 </p>
                 <p className="text-sm text-zinc-600">
                   Prêmio estimado:{' '}
                   <span className="font-semibold text-emerald-700">
-                    {formatMoney(status.proximo.estimativa)}
+                    {formatMoney(proximo.estimativa)}
                   </span>
-                  {status.proximo.acumulado ? ' (acumulado)' : ''}
+                  {proximo.acumulado ? ' (acumulado)' : ''}
                 </p>
               </div>
             ) : (

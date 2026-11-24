@@ -180,3 +180,33 @@ export async function sincronizarEmSegundoPlano(cfg) {
     autoRodando = false
   }
 }
+
+// Só leitura, sem login: busca no navegador o último resultado da Caixa (ou
+// da guidi) e devolve os dados do próximo concurso que vêm nele. Serve para o
+// Início mostrar data e prêmio estimado quando o banco não os tem — o que
+// acontece quando o último concurso entrou pelo espelho do GitHub, que não
+// traz esses campos, e ninguém logado repassou o payload da Caixa.
+// Devolve null se nenhuma fonte responder ou se o payload não servir para o
+// concurso esperado (evita mostrar prêmio de outro concurso).
+export async function buscarProximoDireto(cfg, concursoEsperado) {
+  for (const fonte of fontesDiretas(cfg.fonte)) {
+    try {
+      const p = await fetchDireto(fonte.url())
+      const concurso = Number(p.numeroConcursoProximo)
+      if (!Number.isFinite(concurso) || concurso <= 0) continue
+      if (concursoEsperado && concurso < concursoEsperado) continue
+      const [d, m, a] = String(p.dataProximoConcurso || '').split('/')
+      const estimativa = Number(p.valorEstimadoProximoConcurso)
+      return {
+        concurso,
+        data: a && m && d ? `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` : null,
+        estimativa: Number.isFinite(estimativa) && estimativa > 0 ? estimativa : null,
+        acumulado: p.acumulado ?? null,
+        fonte: fonte.nome,
+      }
+    } catch {
+      // CORS ou rede: tenta a próxima fonte
+    }
+  }
+  return null
+}
